@@ -209,7 +209,6 @@ class TestSummarizationSystem:
         ]
         assert len(providers) == 5
 
-    @pytest.mark.asyncio
     async def test_llm_client_summarize_structure(self) -> None:
         """Test that summarize method produces structured output."""
         settings = Settings()

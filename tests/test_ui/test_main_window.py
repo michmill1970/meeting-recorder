@@ -130,7 +130,7 @@ class TestMainWindowReprocess:
         window = mock_main_window
         window._load_meeting(str(meeting))
 
-        assert "Test content" in window._summary_panel._text_edit.toPlainText()
+        assert "Test content" in window._summary_panel._text_browser.document().toPlainText()
 
     def test_load_meeting_no_files(self, mock_main_window, tmp_dir):
         """Test loading a meeting with no transcript or summary."""
@@ -143,7 +143,7 @@ class TestMainWindowReprocess:
 
         # Transcript and summary should be empty
         assert window._transcript_panel._text_edit.toPlainText() == ""
-        assert window._summary_panel._text_edit.toPlainText() == ""
+        assert window._summary_panel._text_browser.document().toPlainText() == ""
 
     def test_load_meeting_nonexistent(self, mock_main_window):
         """Test loading a meeting that doesn't exist."""

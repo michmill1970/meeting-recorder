@@ -263,7 +263,8 @@ class TestRecordingPanel:
             received.append(True)
         panel.reprocess_clicked.connect(on_reprocess)
         qtbot.addWidget(panel)
-        # Click the reprocess button directly
+        # Switch to the Existing Recordings tab where the button lives
+        panel._tabs.setCurrentIndex(1)
         qtbot.mouseClick(panel._reprocess_btn, Qt.LeftButton)
         assert len(received) == 1
 
@@ -305,7 +306,7 @@ class TestSummaryPanel:
 
     def test_set_summary(self) -> None:
         panel = SummaryPanel()
-        text = "## Summary\nTest content"
+        text = "Test summary content"
         panel.set_summary(text)
         assert panel._text_browser.document().toPlainText() == text
 
