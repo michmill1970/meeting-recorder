@@ -114,9 +114,15 @@ class SummarizeThread(QThread):
 
         try:
             self.progress.emit("Generating summary...")
-            summary = asyncio.run(
-                self._llm_client.summarize(self._transcript)
-            )
+            # Use a dedicated event loop to avoid conflicts with any existing loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                summary = loop.run_until_complete(
+                    self._llm_client.summarize(self._transcript)
+                )
+            finally:
+                loop.close()
 
             if summary is None:
                 self.error.emit("Summarization failed. Check LLM configuration.")
