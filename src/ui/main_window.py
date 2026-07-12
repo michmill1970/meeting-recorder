@@ -569,7 +569,13 @@ class MainWindow(QMainWindow):
             transcript = getattr(self, "_pending_transcript", None)
 
         if not transcript:
-            self.error.emit("No transcript available for summarization.")
+            QMessageBox.critical(
+                self,
+                "No Transcript",
+                "No transcript available for summarization.\n\n"
+                "Please record a meeting or load an existing one first.",
+            )
+            self._progress_bar.setVisible(False)
             return
 
         self._summarize_thread = SummarizeThread(
