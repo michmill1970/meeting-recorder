@@ -190,9 +190,9 @@ class TestLLMClient:
 
     def test_system_prompt_exists(self) -> None:
         """System prompt should be defined."""
-        assert LLMClient.SYSTEM_PROMPT != ""
-        assert "Summary" in LLMClient.SYSTEM_PROMPT
-        assert "Action Items" in LLMClient.SYSTEM_PROMPT
+        assert LLMClient._DEFAULT_USER_INSTRUCTIONS != ""
+        assert "Summary" in LLMClient._DEFAULT_USER_INSTRUCTIONS
+        assert "Action Items" in LLMClient._DEFAULT_USER_INSTRUCTIONS
 
     @pytest.mark.asyncio
     async def test_is_available_false_when_no_key(self) -> None:

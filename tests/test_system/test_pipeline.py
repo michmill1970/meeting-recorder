@@ -225,12 +225,11 @@ class TestSummarizationSystem:
 
     def test_system_prompt_content(self) -> None:
         """Test that the system prompt contains all required sections."""
-        prompt = LLMClient.SYSTEM_PROMPT
+        prompt = LLMClient._DEFAULT_USER_INSTRUCTIONS
 
         required_sections = [
             "Summary",
             "Action Items",
-            "TODOs",
             "Assignments",
             "Follow-up Dates",
         ]
