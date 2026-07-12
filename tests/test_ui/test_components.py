@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QVBoxLayout
 class TestAudioMeter:
     """Tests for AudioMeter widget."""
 
-    def test_initialization(self) -> None:
+    def test_initialization(self, qapp) -> None:
         meter = AudioMeter()
         assert meter._rms_db == -60.0
         assert meter._peak_db == -60.0
