@@ -216,7 +216,8 @@ class RecordingEngine:
             self._wave_file.writeframes(in_data)
         elif not self._using_wav_writer:
             # Buffer raw PCM data for non-WAV formats
-            self._audio_raw_buffer.append(in_data)
+            with self._buffer_lock:
+                self._audio_raw_buffer.append(in_data)
 
         return None, pyaudio.paContinue
 
@@ -343,9 +344,12 @@ class RecordingEngine:
         os.close(fd)
 
         try:
-            # Write raw PCM data
+            # Write raw PCM data (protected by buffer lock to avoid callback writes)
+            with self._buffer_lock:
+                chunks = list(self._audio_raw_buffer)
+
             with open(temp_pcm, "wb") as f:
-                for chunk in self._audio_raw_buffer:
+                for chunk in chunks:
                     f.write(chunk)
 
             # Convert to target format using ffmpeg
@@ -396,5 +400,6 @@ class RecordingEngine:
             except OSError:
                 pass
 
-        # Clear buffer
-        self._audio_raw_buffer = []
+        # Clear buffer (protected by lock to avoid callback writes)
+        with self._buffer_lock:
+            self._audio_raw_buffer = []
