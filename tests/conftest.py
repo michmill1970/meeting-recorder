@@ -253,21 +253,3 @@ def temp_settings_dir(tmp_dir: Path) -> Generator[Path, None, None]:
 def qt_available() -> bool:
     """Check if Qt is available for UI tests."""
     return _qt_available
-
-
-# ============================================================================
-# QApplication autouse fixture for UI component tests
-# ============================================================================
-
-@pytest.fixture(autouse=True)
-def _ensure_qapp():
-    """Ensure a QApplication exists for any test that imports Qt widgets."""
-    if _qt_available:
-        from PySide6.QtWidgets import QApplication
-        if QApplication.instance() is None:
-            app = QApplication(sys.argv)
-            yield app
-        else:
-            yield QApplication.instance()
-    else:
-        yield
