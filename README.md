@@ -6,6 +6,10 @@ A desktop application for recording in-person meetings on macOS, with Whisper-ba
 ![Python](https://img.shields.io/badge/python-3.12+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+## Built With
+
+This entire project was **vibe coded** in a single session using [OpenCode](https://github.com/opencode-ai/opencode) with the Qwen3.6-35B-A3B model (UD-Q6_K quantization). Every line of code — architecture, UI, transcription pipeline, LLM integration, tests, build scripts, and documentation — was generated through natural language conversation.
+
 ## Features
 
 - **High-quality recording** — Configurable audio formats (WAV, FLAC, OPUS, MP3, OGG) with PyAudio
