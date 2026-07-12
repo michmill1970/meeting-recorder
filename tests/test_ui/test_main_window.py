@@ -33,13 +33,14 @@ class TestMainWindowReprocess:
         """Create a MainWindow with mocked dependencies."""
         from src.ui.main_window import MainWindow
 
-        # Mock all the heavy dependencies
+        # Mock all the heavy dependencies and block QMessageBox to prevent dialogs during tests
         with patch("src.recording.engine.RecordingEngine"), \
              patch("src.recording.level_manager.LevelManager"), \
              patch("src.transcription.whisper_client.WhisperClient"), \
              patch("src.summarization.llm_client.LLMClient"), \
              patch("src.utils.sleep_prevention.SleepPrevention"), \
-             patch.object(MainWindow, "_load_microphones"):
+             patch.object(MainWindow, "_load_microphones"), \
+             patch("PySide6.QtWidgets.QMessageBox.warning"):
             window = MainWindow(mock_settings)
             window._settings.recording.save_dir = str(tmp_dir)
             return window
