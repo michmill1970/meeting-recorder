@@ -1,0 +1,60 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.Python
+build/
+dist/
+
+# Virtual envs / pyenv
+.python-version
+
+# Audio files (private recordings)
+*.m4a
+*.mp3
+*.wav
+*.flac
+*.aac
+*.ogg
+*.opus
+*.mp4
+*.mov
+
+# Generated transcripts (private content)
+transcript*.txt
+*.srt
+*.vtt
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+hf_token*
+.hf_token
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Tooling cache
+.claude/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Misc
+*.log
+*.tmp
