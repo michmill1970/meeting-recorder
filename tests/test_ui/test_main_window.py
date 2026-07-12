@@ -41,10 +41,10 @@ class TestMainWindowReprocess:
              patch("src.summarization.llm_client.LLMClient"), \
              patch("src.utils.sleep_prevention.SleepPrevention"), \
              patch.object(MainWindow, "_load_microphones"), \
-             patch.object(QMessageBox, "warning"), \
-             patch.object(QMessageBox, "critical"), \
+             patch.object(QMessageBox, "warning", return_value=QMessageBox.Ok), \
+             patch.object(QMessageBox, "critical", return_value=QMessageBox.Ok), \
              patch.object(QMessageBox, "question", return_value=QMessageBox.Yes), \
-             patch.object(QMessageBox, "information"):
+             patch.object(QMessageBox, "information", return_value=QMessageBox.Ok):
             window = MainWindow(mock_settings)
             window._settings.recording.save_dir = str(tmp_dir)
             return window
