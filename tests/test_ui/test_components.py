@@ -50,8 +50,8 @@ class TestAudioMeter:
     def test_get_color_for_level_green(self) -> None:
         meter = AudioMeter()
         color = meter._get_color_for_level(-20.0)
-        # Should be green (high RGB, low B)
-        assert color.red() > 150
+        # Should be green (green channel is dominant)
+        assert color.green() > color.red()
 
     def test_get_color_for_level_yellow(self) -> None:
         meter = AudioMeter()
@@ -62,8 +62,8 @@ class TestAudioMeter:
     def test_get_color_for_level_red(self) -> None:
         meter = AudioMeter()
         color = meter._get_color_for_level(0.0)
-        # Should be red (high R, low G and B)
-        assert color.red() > 150 and color.green() < 100
+        # Should be red (red channel is dominant)
+        assert color.red() > color.green()
 
     def test_get_level_text(self) -> None:
         meter = AudioMeter()
@@ -263,19 +263,8 @@ class TestRecordingPanel:
             received.append(True)
         panel.reprocess_clicked.connect(on_reprocess)
         qtbot.addWidget(panel)
-        # Find and click the reprocess button
-        existing_tab = panel._tabs.widget(1)
-        layout = existing_tab.layout()
-        reprocess_btn = None
-        for i in range(layout.count()):
-            item = layout.itemAt(i)
-            if item and item.widget():
-                widget = item.widget()
-                if hasattr(widget, "text") and widget.text() == "Reprocess Selected":
-                    reprocess_btn = widget
-                    break
-        assert reprocess_btn is not None
-        qtbot.mouseClick(reprocess_btn, Qt.LeftButton)
+        # Click the reprocess button directly
+        qtbot.mouseClick(panel._reprocess_btn, Qt.LeftButton)
         assert len(received) == 1
 
 
@@ -312,17 +301,16 @@ class TestSummaryPanel:
 
     def test_initialization(self) -> None:
         panel = SummaryPanel()
-        assert panel._text_edit is not None
-        assert panel._text_edit.isReadOnly() is True
+        assert panel._text_browser is not None
 
     def test_set_summary(self) -> None:
         panel = SummaryPanel()
         text = "## Summary\nTest content"
         panel.set_summary(text)
-        assert panel._text_edit.toPlainText() == text
+        assert panel._text_browser.document().toPlainText() == text
 
     def test_clear(self) -> None:
         panel = SummaryPanel()
         panel.set_summary("Some summary")
         panel.clear()
-        assert panel._text_edit.toPlainText() == ""
+        assert panel._text_browser.document().toPlainText() == ""

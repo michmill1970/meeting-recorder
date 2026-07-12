@@ -34,11 +34,11 @@ class TestMainWindowReprocess:
         from src.ui.main_window import MainWindow
 
         # Mock all the heavy dependencies
-        with patch("src.ui.main_window.RecordingEngine"), \
-             patch("src.ui.main_window.LevelManager"), \
-             patch("src.ui.main_window.WhisperClient"), \
-             patch("src.ui.main_window.LLMClient"), \
-             patch("src.ui.main_window.SleepPrevention"), \
+        with patch("src.recording.engine.RecordingEngine"), \
+             patch("src.recording.level_manager.LevelManager"), \
+             patch("src.transcription.whisper_client.WhisperClient"), \
+             patch("src.summarization.llm_client.LLMClient"), \
+             patch("src.utils.sleep_prevention.SleepPrevention"), \
              patch.object(MainWindow, "_load_microphones"):
             window = MainWindow(mock_settings)
             window._settings.recording.save_dir = str(tmp_dir)

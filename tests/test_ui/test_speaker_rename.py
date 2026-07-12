@@ -55,6 +55,8 @@ class TestSpeakerRenameDialog:
 
     def test_preview_shows_renamed_speakers(self, dialog) -> None:
         """Test that the preview updates when a speaker name is entered."""
+        # Clear the auto-selected speaker so preview shows full transcript
+        dialog._selected_speaker = None
         # Enter a new name for Speaker 1
         dialog._speaker_inputs["Speaker 1"].setText("Alice")
         dialog._update_preview()
@@ -65,6 +67,7 @@ class TestSpeakerRenameDialog:
 
     def test_preview_preserves_timestamps(self, dialog) -> None:
         """Test that timestamps are preserved when renaming speakers."""
+        dialog._selected_speaker = None
         dialog._speaker_inputs["Speaker 1"].setText("Alice")
         dialog._update_preview()
 
@@ -74,6 +77,7 @@ class TestSpeakerRenameDialog:
 
     def test_preview_multiple_renames(self, dialog) -> None:
         """Test that multiple speaker renames are reflected in the preview."""
+        dialog._selected_speaker = None
         dialog._speaker_inputs["Speaker 1"].setText("Alice")
         dialog._speaker_inputs["Speaker 2"].setText("Bob")
         dialog._update_preview()
@@ -170,6 +174,7 @@ class TestSpeakerRenameDialog:
         long_transcript = "\n".join(
             f"[00:0{i}] Speaker 1: Line {i}" for i in range(10)
         )
+        dialog._selected_speaker = None
         dialog._transcript_text = long_transcript
         dialog._update_preview()
 

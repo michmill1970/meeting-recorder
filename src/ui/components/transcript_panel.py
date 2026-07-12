@@ -41,7 +41,7 @@ class TranscriptPanel(QWidget):
     def append_transcript(self, text: str) -> None:
         """Append text to the transcript."""
         cursor = self._text_edit.textCursor()
-        cursor.movePosition(cursor.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(text)
         self._text_edit.setTextCursor(cursor)
         self._text_edit.ensureCursorVisible()
