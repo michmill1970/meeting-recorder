@@ -41,6 +41,7 @@ htmlcov/
 
 # Transcripts and summaries (user data)
 *.txt
+!README.md
 *.md
 
 # Settings file (user data)
