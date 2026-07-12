@@ -10,7 +10,7 @@ if not _qt_available:
     pytest.skip("Qt not available, skipping UI tests", allow_module_level=True)
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QListWidgetItem
 
 
 class TestMainWindowReprocess:
@@ -216,7 +216,7 @@ class TestMainWindowReprocess:
         window._reprocess_meeting()
 
     def test_reprocess_meeting_with_audio(self, mock_main_window, tmp_dir):
-        """Test that reprocessing starts processing when audio exists."""
+        """Test that reprocessing starts TranscribeThread when audio exists."""
         meeting = tmp_dir / "test-meeting"
         meeting.mkdir()
         audio_file = meeting / "recording.wav"
@@ -224,21 +224,23 @@ class TestMainWindowReprocess:
 
         window = mock_main_window
 
-        # Mock the ProcessingThread to verify it's created correctly
-        from src.ui.main_window import ProcessingThread
-        with patch.object(window, "_process_meeting") as mock_process:
-            window._recording_panel.populate_meetings([
-                ("Test Meeting", str(meeting)),
-            ])
-            window._recording_panel._meeting_list.setCurrentRow(0)
+        window._recording_panel._meeting_list.clear()
+        item = QListWidgetItem(str(meeting))
+        window._recording_panel._meeting_list.addItem(item)
+        window._recording_panel._meeting_list.setCurrentRow(0)
 
-            # Call reprocess
+        # Patch TranscribeThread to avoid actual transcription
+        with patch("src.ui.main_window.TranscribeThread") as mock_thread_cls:
+            mock_thread = MagicMock()
+            mock_thread_cls.return_value = mock_thread
+
             window._reprocess_meeting()
 
-            # The reprocess method creates a ProcessingThread directly
-            # We can verify the thread was started by checking the status
-            assert window._processing_thread is not None
-            assert window._processing_thread.isRunning()
+            # Verify TranscribeThread was instantiated with correct args
+            mock_thread_cls.assert_called_once()
+            call_args = mock_thread_cls.call_args
+            assert call_args[0][0] == meeting  # meeting_dir
+            assert call_args[0][1].name == "recording.wav"  # audio_path
 
     def test_tab_changed_populates_meetings(self, mock_main_window, tmp_dir):
         """Test that switching to Existing Recordings tab populates the list."""
