@@ -68,6 +68,7 @@ class TranscribeThread(QThread):
 
             if not self._audio_path or not self._audio_path.exists():
                 self.error.emit(f"Audio file not found: {self._audio_path}")
+                self.finished.emit()
                 return
 
             from src.models.schemas import RecordingSession
@@ -80,6 +81,7 @@ class TranscribeThread(QThread):
 
             if transcript is None:
                 self.error.emit("Transcription failed. Check logs for details.")
+                self.finished.emit()
                 return
 
             self.transcript_ready.emit(transcript)
@@ -88,6 +90,7 @@ class TranscribeThread(QThread):
         except Exception as e:
             self.error.emit(f"Error during processing: {e}")
             logger.exception("Processing thread error")
+            self.finished.emit()
 
 
 class SummarizeThread(QThread):
@@ -126,6 +129,7 @@ class SummarizeThread(QThread):
 
             if summary is None:
                 self.error.emit("Summarization failed. Check LLM configuration.")
+                self.finished.emit()
                 return
 
             self.summary_ready.emit(summary)
@@ -134,6 +138,7 @@ class SummarizeThread(QThread):
         except Exception as e:
             self.error.emit(f"Error during processing: {e}")
             logger.exception("Processing thread error")
+            self.finished.emit()
 
 
 class MainWindow(QMainWindow):
