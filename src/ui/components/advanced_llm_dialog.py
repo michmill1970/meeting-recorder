@@ -367,6 +367,20 @@ class AdvancedLLMSettingsDialog(QDialog):
             self._top_k_row,
         ))
 
+        self._max_tokens_row = _SpinBoxRow(
+            "Max Tokens",
+            "Maximum number of tokens in the generated output.\n"
+            "Increase for longer summaries. 8192 is a good default.",
+            self._settings.max_tokens,
+            min_val=256,
+            max_val=32768,
+        )
+        layout.addLayout(self._make_param_row(
+            "Max Tokens",
+            "Maximum tokens in output",
+            self._max_tokens_row,
+        ))
+
         return layout
 
     def _create_repetition_section(self) -> QVBoxLayout:
@@ -480,6 +494,7 @@ class AdvancedLLMSettingsDialog(QDialog):
             temperature=self._temp_row.get_value(),
             top_p=self._top_p_row.get_value(),
             top_k=self._top_k_row.get_value(),
+            max_tokens=self._max_tokens_row.get_value(),
             repetition_penalty=self._rep_penalty_row.get_value(),
             presence_penalty=self._presence_row.get_value(),
             frequency_penalty=self._freq_row.get_value(),

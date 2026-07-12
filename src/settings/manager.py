@@ -78,6 +78,9 @@ class LLMGenerationSettings(BaseModel):
     top_p: float = 0.9
     top_k: int = 40
 
+    # Output length
+    max_tokens: int = 8192
+
     # Repetition
     repetition_penalty: float = 1.1
 
@@ -101,7 +104,7 @@ class LLMGenerationSettings(BaseModel):
         """Return generation parameters as a dict suitable for API calls."""
         params: dict = {
             "temperature": self.temperature,
-            "max_tokens": 4096,
+            "max_tokens": self.max_tokens,
         }
         if self.top_p is not None:
             params["top_p"] = self.top_p
@@ -128,6 +131,7 @@ class LLMGenerationSettings(BaseModel):
                 "temperature": 0.1,
                 "top_p": 0.5,
                 "top_k": 20,
+                "max_tokens": 8192,
                 "repetition_penalty": 1.2,
                 "presence_penalty": 0.0,
                 "frequency_penalty": 0.0,
@@ -136,6 +140,7 @@ class LLMGenerationSettings(BaseModel):
                 "temperature": 0.3,
                 "top_p": 0.9,
                 "top_k": 40,
+                "max_tokens": 8192,
                 "repetition_penalty": 1.1,
                 "presence_penalty": 0.0,
                 "frequency_penalty": 0.0,
@@ -144,6 +149,7 @@ class LLMGenerationSettings(BaseModel):
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 64,
+                "max_tokens": 8192,
                 "repetition_penalty": 1.05,
                 "presence_penalty": 0.3,
                 "frequency_penalty": 0.3,
