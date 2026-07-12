@@ -10,6 +10,8 @@ A desktop application for recording in-person meetings on macOS, with Whisper-ba
 
 This entire project was **vibe coded** in a single session using [OpenCode](https://github.com/opencode-ai/opencode) with the Qwen3.6-35B-A3B model (UD-Q6_K quantization). Every line of code — architecture, UI, transcription pipeline, LLM integration, tests, build scripts, and documentation — was generated through natural language conversation.
 
+As an IT professional with over 30 years in the industry, this project was as much about building a practical tool for recording, transcribing, and summarizing in-person meetings as it was about exploring what's possible when you run a capable local model on your own hardware. It was genuinely surprising to see how well a local model could handle the full scope of the project — from designing a polished UI to wiring up Whisper diarization and multi-provider LLM integration — all through conversation.
+
 ## Features
 
 - **High-quality recording** — Configurable audio formats (WAV, FLAC, OPUS, MP3, OGG) with PyAudio
