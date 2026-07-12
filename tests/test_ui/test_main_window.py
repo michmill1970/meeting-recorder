@@ -35,22 +35,16 @@ class TestMainWindowReprocess:
         from src.ui.main_window import MainWindow
 
         # Mock all the heavy dependencies and block QMessageBox to prevent dialogs during tests
-        # Save the real QMessageBox.Yes before patching
-        _real_yes = QMessageBox.Yes
         with patch("src.recording.engine.RecordingEngine"), \
              patch("src.recording.level_manager.LevelManager"), \
              patch("src.transcription.whisper_client.WhisperClient"), \
              patch("src.summarization.llm_client.LLMClient"), \
              patch("src.utils.sleep_prevention.SleepPrevention"), \
              patch.object(MainWindow, "_load_microphones"), \
-             patch("src.ui.main_window.QMessageBox") as mock_qmsgbox:
-            mock_qmsgbox.warning = MagicMock()
-            mock_qmsgbox.critical = MagicMock()
-            mock_qmsgbox.question = MagicMock(return_value=_real_yes)
-            mock_qmsgbox.information = MagicMock()
-            window = MainWindow(mock_settings)
-            window._settings.recording.save_dir = str(tmp_dir)
-            return window
+             patch.object(QMessageBox, "warning"), \
+             patch.object(QMessageBox, "critical"), \
+             patch.object(QMessageBox, "question", return_value=QMessageBox.Yes), \
+             patch.object(QMessageBox, "information"):
             window = MainWindow(mock_settings)
             window._settings.recording.save_dir = str(tmp_dir)
             return window
