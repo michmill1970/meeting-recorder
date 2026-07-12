@@ -256,13 +256,26 @@ def qt_available() -> bool:
 
 
 # ============================================================================
-# Ensure QApplication exists for any test that creates Qt widgets
+# Ensure QApplication exists for tests that don't use pytest-qt fixtures
 # ============================================================================
+
+def _has_pytest_qt() -> bool:
+    """Check if pytest-qt is installed (its fixtures will manage QApplication)."""
+    try:
+        import pytestqt  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
 
 @pytest.fixture(autouse=True)
 def _ensure_qapp():
-    """Ensure a QApplication exists for any test that imports Qt widgets."""
-    if _qt_available:
+    """Ensure a QApplication exists for any test that imports Qt widgets.
+
+    Only creates QApplication if pytest-qt is not available, since pytest-qt
+    manages its own QApplication lifecycle.
+    """
+    if _qt_available and not _has_pytest_qt():
         from PySide6.QtWidgets import QApplication
         if QApplication.instance() is None:
             QApplication(sys.argv)
