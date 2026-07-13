@@ -48,7 +48,7 @@ class TestMainWindowReprocess:
              patch("src.ui.main_window.QMessageBox.information", return_value=QMessageBox.Ok):
             window = MainWindow(mock_settings)
             window._settings.recording.save_dir = str(tmp_dir)
-            return window
+            yield window
 
     def test_populate_meetings_list_empty(self, mock_main_window, tmp_dir):
         """Test that an empty save directory shows no meetings."""
