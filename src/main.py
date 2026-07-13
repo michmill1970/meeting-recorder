@@ -45,11 +45,25 @@ def main() -> None:
     passphrase_manager = PassphraseManager()
     passphrase = passphrase_manager.get_passphrase()
 
-    # Load settings with passphrase if available
+    # Load settings (without passphrase first — needed to read encryption_enabled)
     settings_manager = SettingsManager(
         passphrase_manager=passphrase_manager
     )
-    settings = settings_manager.load(passphrase=passphrase)
+    settings = settings_manager.load(passphrase=None)
+
+    # If encryption is enabled but the keychain didn't provide a passphrase,
+    # prompt the user so we can decrypt the stored credentials.
+    if settings.encryption_enabled and not passphrase:
+        logger.info("Encryption is enabled but no passphrase found in keychain — prompting user")
+        passphrase = passphrase_manager.prompt_passphrase()
+        if passphrase:
+            passphrase_manager.set_passphrase(passphrase)
+            # Reload settings with the provided passphrase
+            settings = settings_manager.load(passphrase=passphrase)
+        else:
+            # User cancelled — settings will load with encrypted values
+            # The Security tab will show encryption enabled and prompt again
+            logger.warning("No passphrase provided — settings with encrypted credentials may not work correctly")
 
     # Apply dark theme
     app.setStyleSheet(DARK_THEME)

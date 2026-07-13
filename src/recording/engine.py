@@ -54,6 +54,10 @@ class RecordingEngine:
         self._audio_buffer: Optional[np.ndarray] = None
         self._audio_raw_buffer: list[bytes] = []
         self._buffer_lock = threading.Lock()
+        # Maximum number of raw chunks to buffer (prevents unbounded memory growth)
+        # At 1024 samples/chunk * 2 bytes/sample * 1000 chunks = ~2 MB
+        self._max_raw_chunks = 1000
+        self._overflow_count = 0
 
     def initialize(self) -> None:
         """Initialize PyAudio instance."""
@@ -220,9 +224,20 @@ class RecordingEngine:
         if self._using_wav_writer and self._wave_file:
             self._wave_file.writeframes(in_data)
         elif not self._using_wav_writer:
-            # Buffer raw PCM data for non-WAV formats
+            # Buffer raw PCM data for non-WAV formats with overflow protection
             with self._buffer_lock:
                 self._audio_raw_buffer.append(in_data)
+                if len(self._audio_raw_buffer) > self._max_raw_chunks:
+                    self._overflow_count += 1
+                    if self._overflow_count == 1:
+                        logger.warning(
+                            "Raw buffer exceeded %d chunks — oldest chunks will be "
+                            "dropped to prevent unbounded memory growth",
+                            self._max_raw_chunks,
+                        )
+                    # Drop oldest 25% of chunks to prevent unbounded growth
+                    drop_count = self._max_raw_chunks // 4
+                    self._audio_raw_buffer = self._audio_raw_buffer[-(self._max_raw_chunks - drop_count):]
 
         return None, pyaudio.paContinue
 
@@ -271,6 +286,21 @@ class RecordingEngine:
         self._paused = False
         logger.info("Recording resumed")
 
+    def freeze_buffer(self) -> None:
+        """Freeze the raw PCM buffer to prevent race conditions during conversion.
+
+        Called by stop() before _convert_to_format() to ensure the stream callback
+        cannot write new data to the buffer while we're reading it. This prevents
+        partial/corrupt output. The callback itself continues to run (it checks
+        _running which is already False), but no new data is appended to the buffer
+        because _running is False.
+        """
+        with self._buffer_lock:
+            if not self._audio_raw_buffer:
+                return
+            # Copy the buffer contents so _convert_to_format can read them
+            self._audio_raw_buffer = list(self._audio_raw_buffer)
+
     def stop(self) -> None:
         """Stop recording and close all resources."""
         with self._lock:
@@ -282,6 +312,10 @@ class RecordingEngine:
             self._running = False
             self._paused = False
             self._pause_start_mono = None
+
+        # Freeze the raw buffer before conversion to prevent race with stream callback
+        if not self._using_wav_writer:
+            self.freeze_buffer()
 
         # Close WAV file if using WAV writer
         if self._wave_file:

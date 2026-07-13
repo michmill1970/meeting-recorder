@@ -191,6 +191,7 @@ class Settings(BaseModel):
     audio_leveling: AudioLevelingSettings = Field(default_factory=AudioLevelingSettings)
     whisper: WhisperSettings = Field(default_factory=WhisperSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    encryption_enabled: bool = False
 
     def model_dump_filtered(self) -> dict[str, Any]:
         """Dump settings, excluding empty sensitive fields."""
@@ -248,18 +249,28 @@ class SettingsManager:
         return data
 
     def _decrypt_sensitive(self, raw: dict[str, Any], passphrase: str) -> dict[str, Any]:
-        """Decrypt api_key and hf_token in-place if they are encrypted."""
+        """Decrypt api_key and hf_token in-place if they are encrypted.
+
+        If decryption fails (wrong passphrase), the field is set to "" so that
+        pydantic validation does not reject None for str-typed fields. The
+        _encrypted flag is only removed on successful decryption so that a
+        subsequent save with the correct passphrase can re-encrypt.
+        """
         if not passphrase:
             return raw
         salt = self._load_salt()
         llm = raw.get("llm", {})
         if llm.get("_encrypted") and llm.get("api_key"):
-            llm["api_key"] = decrypt_value(llm["api_key"], passphrase, bytes.fromhex(salt))
-            llm.pop("_encrypted", None)
+            decrypted = decrypt_value(llm["api_key"], passphrase, bytes.fromhex(salt))
+            llm["api_key"] = decrypted if decrypted is not None else ""
+            if decrypted is not None:
+                llm.pop("_encrypted", None)
         whisper = raw.get("whisper", {})
         if whisper.get("_encrypted") and whisper.get("hf_token"):
-            whisper["hf_token"] = decrypt_value(whisper["hf_token"], passphrase, bytes.fromhex(salt))
-            whisper.pop("_encrypted", None)
+            decrypted = decrypt_value(whisper["hf_token"], passphrase, bytes.fromhex(salt))
+            whisper["hf_token"] = decrypted if decrypted is not None else ""
+            if decrypted is not None:
+                whisper.pop("_encrypted", None)
         return raw
 
     # -- migration helpers ---------------------------------------------------

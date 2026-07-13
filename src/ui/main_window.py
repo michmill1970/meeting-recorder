@@ -308,13 +308,13 @@ class MainWindow(QMainWindow):
         self._progress_bar = QProgressBar()
         self._progress_bar.setVisible(False)
         self._progress_bar.setFixedWidth(200)
-        self.statusBar().addWidget(self._progress_bar)
+        self.statusBar().addPermanentWidget(self._progress_bar)
 
         self._cancel_button = QPushButton("Cancel")
         self._cancel_button.setVisible(False)
         self._cancel_button.setFixedWidth(80)
         self._cancel_button.clicked.connect(self._on_cancel)
-        self.statusBar().addWidget(self._cancel_button)
+        self.statusBar().addPermanentWidget(self._cancel_button)
 
         # Menu bar
         self._setup_menu()
@@ -434,8 +434,6 @@ class MainWindow(QMainWindow):
 
     def _on_cancel(self) -> None:
         """Cancel the currently running processing operation."""
-        self._cancelled = True
-
         # Cancel transcription thread and subprocess
         if self._transcribe_thread and self._transcribe_thread.isRunning():
             self._whisper_client.cancel()
@@ -447,7 +445,18 @@ class MainWindow(QMainWindow):
         self._cancel_button.setVisible(False)
         self._status_label.setText("Processing cancelled")
 
-        # Clean up thread references
+        # Reset the cancelled flag so future operations are not affected
+        self._cancelled = False
+
+        # Terminate running threads before clearing references to avoid
+        # PySide6 QThread destructor crashes (abort when a running QThread
+        # is garbage-collected from the wrong thread).
+        if self._transcribe_thread and self._transcribe_thread.isRunning():
+            self._transcribe_thread.terminate()
+        if self._summarize_thread and self._summarize_thread.isRunning():
+            self._summarize_thread.terminate()
+
+        # Clear thread references (threads are now stopped)
         self._transcribe_thread = None
         self._summarize_thread = None
 
@@ -613,7 +622,7 @@ class MainWindow(QMainWindow):
         self._transcript_panel.set_transcript(transcript)
         self._pending_transcript = transcript
 
-        # Show speaker rename dialog
+        # Post dialog asynchronously so the transcript renders first
         from src.ui.components.speaker_rename_dialog import SpeakerRenameDialog
 
         dialog = SpeakerRenameDialog(
@@ -627,10 +636,12 @@ class MainWindow(QMainWindow):
         dialog.use_defaults.connect(self._on_use_default_speakers)
         dialog.cancelled.connect(self._on_speaker_rename_cancelled)
 
-        # Show dialog
-        dialog.exec()
+        # Show dialog on the next iteration of the event loop so the transcript
+        # panel updates first, then the dialog appears modally.
+        QTimer.singleShot(0, dialog.exec)
 
-        # Refresh transcript display in case speakers were renamed
+        # Refresh transcript display in case speakers were renamed after dialog closes
+        # (exec returns when the dialog is closed)
         self._refresh_transcript_display()
 
     def _refresh_transcript_display(self) -> None:
@@ -656,6 +667,7 @@ class MainWindow(QMainWindow):
         """Handle speaker rename cancellation — stop processing."""
         self._status_label.setText("Processing cancelled")
         self._progress_bar.setVisible(False)
+        self._cancel_button.setVisible(False)
         self._transcript_panel.clear()
         self._summary_panel.clear()
         self._session = None
@@ -693,6 +705,7 @@ class MainWindow(QMainWindow):
         self._summarize_thread.error.connect(self._on_processing_error)
         self._summarize_thread.finished.connect(self._on_processing_finished)
 
+        self._cancel_button.setVisible(True)
         self._status_label.setText("Generating summary...")
         self._progress_bar.setVisible(True)
         self._progress_bar.setRange(0, 0)  # Indeterminate

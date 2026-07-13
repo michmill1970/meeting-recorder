@@ -13,7 +13,32 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEventLoop, QObject, Qt
+
+try:
+    from PySide6.QtTest import QTest
+except ImportError:
+    QTest = None
+
+
+def _wait_for_thread(thread: QObject, timeout_ms: int = 10000) -> None:
+    """Block the test event loop until *thread* emits ``finished``.
+
+    Uses a local ``QEventLoop`` so that Qt signals are processed while
+    waiting.  This is the correct way to wait on a ``QThread`` in a test
+    (``QTest.qWait`` only sleeps and does not process events).
+
+    Ensures a ``QApplication`` exists (needed for ``QEventLoop``).
+    """
+    from PySide6.QtWidgets import QApplication
+
+    if QApplication.instance() is None:
+        QApplication(sys.argv)
+
+    loop = QEventLoop()
+    thread.finished.connect(loop.quit, Qt.QueuedConnection)
+    thread.start()
+    loop.exec()  # processes events until thread.finished
 
 
 def _has_qt():
@@ -57,27 +82,27 @@ class TestTranscribeThreadCancel:
             whisper_client=mock_client,
             cancelled_ref=cancelled_ref,
         )
-        return thread, mock_client
+        return thread, mock_client, session_dir
 
     def test_is_cancelled_with_no_ref(self) -> None:
         """_is_cancelled() should return False when no cancelled_ref is set."""
-        thread, _ = self._make_thread(cancelled_ref=None)
+        thread, _, _ = self._make_thread(cancelled_ref=None)
         assert thread._is_cancelled() is False
 
     def test_is_cancelled_with_ref_true(self) -> None:
         """_is_cancelled() should return True when ref returns True."""
-        thread, _ = self._make_thread(cancelled_ref=lambda: True)
+        thread, _, _ = self._make_thread(cancelled_ref=lambda: True)
         assert thread._is_cancelled() is True
 
     def test_is_cancelled_with_ref_false(self) -> None:
         """_is_cancelled() should return False when ref returns False."""
-        thread, _ = self._make_thread(cancelled_ref=lambda: False)
+        thread, _, _ = self._make_thread(cancelled_ref=lambda: False)
         assert thread._is_cancelled() is False
 
     def test_cancel_before_start_emits_error(self) -> None:
         """Thread should emit error and finish immediately if already cancelled."""
         cancelled = [True]
-        thread, mock_client = self._make_thread(
+        thread, mock_client, _ = self._make_thread(
             cancelled_ref=lambda: cancelled[0]
         )
 
@@ -89,8 +114,7 @@ class TestTranscribeThreadCancel:
 
         thread.error.connect(on_error, Qt.DirectConnection)
 
-        thread.start()
-        thread.wait(timeout=5000)
+        _wait_for_thread(thread)
 
         assert len(errors) == 1
         assert "cancelled" in errors[0].lower()
@@ -99,7 +123,7 @@ class TestTranscribeThreadCancel:
     def test_cancel_flag_false_succeeds(self) -> None:
         """Thread should succeed normally when not cancelled."""
         cancelled = [False]
-        thread, mock_client = self._make_thread(
+        thread, mock_client, _ = self._make_thread(
             cancelled_ref=lambda: cancelled[0]
         )
 
@@ -118,8 +142,7 @@ class TestTranscribeThreadCancel:
         thread.transcript_ready.connect(on_transcript, Qt.DirectConnection)
         mock_client.transcribe.return_value = "Test transcript"
 
-        thread.start()
-        thread.wait(timeout=5000)
+        _wait_for_thread(thread)
 
         assert len(transcripts) == 1
         assert transcripts[0] == "Test transcript"
@@ -128,14 +151,14 @@ class TestTranscribeThreadCancel:
 
     def test_cancel_after_transcription_emits_error(self) -> None:
         """If cancelled after transcription succeeds, should emit error."""
-        cancelled = [False, True]
+        cancelled = [True]
         call_count = [0]
 
         def transcribe_side_effect(*args, **kwargs):
             call_count[0] += 1
             return "Test transcript"
 
-        thread, mock_client = self._make_thread(
+        thread, mock_client, _ = self._make_thread(
             cancelled_ref=lambda: cancelled[0] if call_count[0] <= 1 else True
         )
 
@@ -154,8 +177,7 @@ class TestTranscribeThreadCancel:
         thread.transcript_ready.connect(on_transcript, Qt.DirectConnection)
         mock_client.transcribe.side_effect = transcribe_side_effect
 
-        thread.start()
-        thread.wait(timeout=5000)
+        _wait_for_thread(thread)
 
         assert len(errors) == 1
         assert "cancelled" in errors[0].lower()
@@ -180,27 +202,27 @@ class TestSummarizeThreadCancel:
             llm_client=mock_client,
             cancelled_ref=cancelled_ref,
         )
-        return thread, mock_client
+        return thread, mock_client, None
 
     def test_is_cancelled_with_no_ref(self) -> None:
         """_is_cancelled() should return False when no cancelled_ref is set."""
-        thread, _ = self._make_thread(cancelled_ref=None)
+        thread, _, _ = self._make_thread(cancelled_ref=None)
         assert thread._is_cancelled() is False
 
     def test_is_cancelled_with_ref_true(self) -> None:
         """_is_cancelled() should return True when ref returns True."""
-        thread, _ = self._make_thread(cancelled_ref=lambda: True)
+        thread, _, _ = self._make_thread(cancelled_ref=lambda: True)
         assert thread._is_cancelled() is True
 
     def test_is_cancelled_with_ref_false(self) -> None:
         """_is_cancelled() should return False when ref returns False."""
-        thread, _ = self._make_thread(cancelled_ref=lambda: False)
+        thread, _, _ = self._make_thread(cancelled_ref=lambda: False)
         assert thread._is_cancelled() is False
 
     def test_cancel_before_start_emits_error(self) -> None:
         """Thread should emit error and finish immediately if already cancelled."""
         cancelled = [True]
-        thread, mock_client = self._make_thread(
+        thread, mock_client, _ = self._make_thread(
             cancelled_ref=lambda: cancelled[0]
         )
 
@@ -212,8 +234,7 @@ class TestSummarizeThreadCancel:
 
         thread.error.connect(on_error, Qt.DirectConnection)
 
-        thread.start()
-        thread.wait(timeout=5000)
+        _wait_for_thread(thread)
 
         assert len(errors) == 1
         assert "cancelled" in errors[0].lower()
@@ -222,7 +243,7 @@ class TestSummarizeThreadCancel:
     def test_cancel_flag_false_succeeds(self) -> None:
         """Thread should succeed normally when not cancelled."""
         cancelled = [False]
-        thread, mock_client = self._make_thread(
+        thread, mock_client, _ = self._make_thread(
             cancelled_ref=lambda: cancelled[0]
         )
 
@@ -245,8 +266,7 @@ class TestSummarizeThreadCancel:
 
         mock_client.summarize = mock_summarize
 
-        thread.start()
-        thread.wait(timeout=5000)
+        _wait_for_thread(thread)
 
         assert len(summaries) == 1
         assert summaries[0] == "Test summary"
@@ -255,7 +275,7 @@ class TestSummarizeThreadCancel:
 
     def test_cancelled_error_from_provider(self) -> None:
         """Thread should handle CancelledError from async summarize."""
-        cancelled = [False, True]
+        cancelled = [True]
         call_count = [0]
 
         async def mock_summarize(transcript):
@@ -284,8 +304,7 @@ class TestSummarizeThreadCancel:
 
         thread.error.connect(on_error, Qt.DirectConnection)
 
-        thread.start()
-        thread.wait(timeout=5000)
+        _wait_for_thread(thread)
 
         assert len(errors) == 1
         assert "cancelled" in errors[0].lower()

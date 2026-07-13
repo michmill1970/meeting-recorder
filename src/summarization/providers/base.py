@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -18,7 +19,7 @@ class BaseLLMClient(ABC):
             generation_settings: Advanced LLM parameters (temperature, top_p, etc.)
         """
         self._gen = generation_settings or LLMGenerationSettings()
-        self._cancelled = False
+        self._cancel_event = threading.Event()
 
     def _get_gen_params(self) -> dict[str, Any]:
         """Extract generation parameters as a dict for API calls."""
@@ -26,11 +27,11 @@ class BaseLLMClient(ABC):
 
     def cancel(self) -> None:
         """Cancel the current generation."""
-        self._cancelled = True
+        self._cancel_event.set()
 
     def cancelled(self) -> bool:
         """Check if the current operation has been cancelled."""
-        return self._cancelled
+        return self._cancel_event.is_set()
 
     @abstractmethod
     async def generate(

@@ -31,7 +31,7 @@ from src.models.schemas import (
     SummarizationStyle,
     WhisperSpeakerMode,
 )
-from src.settings.manager import Settings
+from src.settings.manager import Settings, SettingsManager
 from src.settings.passphrase_manager import PassphraseManager
 from src.ui.components.advanced_llm_dialog import AdvancedLLMSettingsDialog
 
@@ -415,22 +415,33 @@ class SettingsDialog(QDialog):
         self._pp_check.setStyleSheet("color: #E0E0E5; font-size: 13px;")
         pp_layout.addRow("", self._pp_check)
 
-        # Check if passphrase is already set
-        has_passphrase = self._passphrase_manager.get_passphrase() is not None
-        self._pp_check.setChecked(has_passphrase)
-
+        # Create passphrase input widgets first
         self._pp_edit = QLineEdit()
         self._pp_edit.setEchoMode(QLineEdit.Password)
         self._pp_edit.setPlaceholderText(
             "Enter passphrase (required to encrypt settings)"
         )
-        self._pp_edit.setEnabled(has_passphrase)
-        pp_layout.addRow("Passphrase:", self._pp_edit)
-
         self._pp_confirm_edit = QLineEdit()
         self._pp_confirm_edit.setEchoMode(QLineEdit.Password)
         self._pp_confirm_edit.setPlaceholderText("Confirm passphrase")
-        self._pp_confirm_edit.setEnabled(has_passphrase)
+
+        # Use the persisted encryption_enabled flag as the source of truth.
+        # If encryption is enabled and the passphrase manager has a cached
+        # passphrase, pre-fill the fields so the user can review/change it.
+        encryption_on = self._settings.encryption_enabled
+        self._pp_check.setChecked(encryption_on)
+
+        cached_pp = self._passphrase_manager.get_passphrase()
+        pp_edit_enabled = encryption_on
+        if encryption_on and cached_pp:
+            # Pre-fill with masked text so the user knows a passphrase is set
+            self._pp_edit.setText(cached_pp)
+            self._pp_confirm_edit.setText(cached_pp)
+
+        self._pp_edit.setEnabled(pp_edit_enabled)
+        pp_layout.addRow("Passphrase:", self._pp_edit)
+
+        self._pp_confirm_edit.setEnabled(pp_edit_enabled)
         pp_layout.addRow("Confirm:", self._pp_confirm_edit)
 
         layout.addLayout(pp_layout)
@@ -455,7 +466,7 @@ class SettingsDialog(QDialog):
             }
         """)
         self._change_pp_btn.clicked.connect(self._change_passphrase)
-        self._change_pp_btn.setEnabled(has_passphrase)
+        self._change_pp_btn.setEnabled(encryption_on)
         btn_layout.addWidget(self._change_pp_btn)
 
         self._remove_pp_btn = QPushButton("Remove Passphrase")
@@ -474,7 +485,7 @@ class SettingsDialog(QDialog):
             }
         """)
         self._remove_pp_btn.clicked.connect(self._remove_passphrase)
-        self._remove_pp_btn.setEnabled(has_passphrase)
+        self._remove_pp_btn.setEnabled(encryption_on)
         btn_layout.addWidget(self._remove_pp_btn)
 
         btn_layout.addStretch()
@@ -669,7 +680,10 @@ class SettingsDialog(QDialog):
 
     def _handle_passphrase_change(self) -> None:
         """Update passphrase if encryption was toggled."""
-        if self._pp_check.isChecked():
+        enabled = self._pp_check.isChecked()
+        self._settings.encryption_enabled = enabled
+
+        if enabled:
             pp = self._pp_edit.text()
             pp_confirm = self._pp_confirm_edit.text()
             if pp != pp_confirm:
@@ -679,7 +693,38 @@ class SettingsDialog(QDialog):
                 self._passphrase_manager.set_passphrase(pp)
                 logger.info("Passphrase set/updated")
         else:
-            # Encryption disabled — don't clear passphrase immediately,
-            # but clear the cached value for this session
-            self._passphrase_manager._passphrase = None  # type: ignore[attr-defined]
-            logger.info("Encryption disabled for this session")
+            # Encryption disabled — decrypt sensitive fields with current
+            # passphrase so they can be saved as plaintext.
+            self._decrypt_sensitive_fields()
+            self._passphrase_manager.clear_passphrase()
+            logger.info("Encryption disabled")
+
+    def _decrypt_sensitive_fields(self) -> None:
+        """Decrypt api_key and hf_token using the current passphrase, if any."""
+        from src.settings.encryption import decrypt_value, generate_salt
+        from pathlib import Path
+
+        passphrase = self._passphrase_manager.get_passphrase()
+        if not passphrase:
+            return
+
+        # Load salt from the same directory as the settings file
+        salt_path = SettingsManager.SETTINGS_DIR / ".encryption_salt"
+        if not salt_path.exists():
+            return
+        salt_hex = salt_path.read_text().strip()
+        salt = bytes.fromhex(salt_hex)
+
+        llm = self._settings.llm
+        if llm.api_key:
+            decrypted = decrypt_value(llm.api_key, passphrase, salt)
+            if decrypted is not None:
+                llm.api_key = decrypted
+                logger.info("Decrypted api_key for plaintext save")
+
+        whisper = self._settings.whisper
+        if whisper.hf_token:
+            decrypted = decrypt_value(whisper.hf_token, passphrase, salt)
+            if decrypted is not None:
+                whisper.hf_token = decrypted
+                logger.info("Decrypted hf_token for plaintext save")
