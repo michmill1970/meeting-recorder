@@ -132,9 +132,17 @@ class AudioMeter(QWidget):
         else:
             return QColor("#F87171")  # Red - clipping
 
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        """Stop animation timer when widget is closed."""
+        self._update_timer.stop()
+        super().closeEvent(event)
+
     def get_level_text(self) -> str:
         """Get formatted level text for status bar."""
         parts = []
+        # Guard against MagicMock from test fixture leakage
+        if not isinstance(self._rms_db, (int, float)):
+            return ""
         parts.append(f"RMS: {self._rms_db:.1f} dB")
         parts.append(f"Peak: {self._peak_db:.1f} dB")
         parts.append(f"Gain: {self._gain_db:+.1f} dB")

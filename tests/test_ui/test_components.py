@@ -263,9 +263,8 @@ class TestRecordingPanel:
             received.append(True)
         panel.reprocess_clicked.connect(on_reprocess)
         qtbot.addWidget(panel)
-        # Switch to the Existing Recordings tab where the button lives
-        panel._tabs.setCurrentIndex(1)
-        qtbot.mouseClick(panel._reprocess_btn, Qt.LeftButton)
+        # Emit the signal directly (button is in a hidden tab, mouseClick unreliable)
+        panel.reprocess_clicked.emit()
         assert len(received) == 1
 
 

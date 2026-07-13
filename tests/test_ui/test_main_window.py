@@ -225,7 +225,8 @@ class TestMainWindowReprocess:
         window = mock_main_window
 
         window._recording_panel._meeting_list.clear()
-        item = QListWidgetItem(str(meeting))
+        item = QListWidgetItem(meeting.name)
+        item.setData(Qt.UserRole, str(meeting))
         window._recording_panel._meeting_list.addItem(item)
         window._recording_panel._meeting_list.setCurrentRow(0)
 

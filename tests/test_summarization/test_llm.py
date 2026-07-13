@@ -42,6 +42,7 @@ class TestOpenAIProvider:
         )
         assert provider._base_url == "http://localhost:1234/v1"
 
+    @pytest.mark.asyncio
     async def test_is_available_no_key(self) -> None:
         """Test availability check with empty API key."""
         with patch("src.summarization.providers.openai.AsyncOpenAI") as mock_client_class:
@@ -49,6 +50,7 @@ class TestOpenAIProvider:
             provider = OpenAIProvider(api_key="")
             assert await provider.is_available() is False
 
+    @pytest.mark.asyncio
     async def test_is_available_with_key(self) -> None:
         """Test availability check with mocked client."""
         with patch("src.summarization.providers.openai.AsyncOpenAI") as mock_client_class:
@@ -68,6 +70,7 @@ class TestAnthropicProvider:
         assert provider._api_key == "test_key"
         assert provider._model == "claude-sonnet-4-20250514"
 
+    @pytest.mark.asyncio
     async def test_is_available_no_key(self) -> None:
         """Test availability check with empty API key."""
         with patch("src.summarization.providers.anthropic.Anthropic") as mock_client_class:
@@ -92,6 +95,7 @@ class TestOllamaProvider:
         assert provider._base_url == "http://custom:11434"
         assert provider._model == "mistral"
 
+    @pytest.mark.asyncio
     async def test_is_available_offline(self) -> None:
         """Test availability when Ollama is not running."""
         with patch("requests.get") as mock_get:
@@ -112,6 +116,7 @@ class TestLMStudioProvider:
         provider = LMStudioProvider(model="custom-model")
         assert provider._model == "custom-model"
 
+    @pytest.mark.asyncio
     async def test_is_available_offline(self) -> None:
         """Test availability when LM Studio is not running."""
         with patch("requests.get") as mock_get:
@@ -128,6 +133,7 @@ class TestVLLMProvider:
         provider = VLLMProvider()
         assert provider._base_url == "http://localhost:8000/v1"
 
+    @pytest.mark.asyncio
     async def test_is_available_offline(self) -> None:
         """Test availability when vLLM is not running."""
         with patch("requests.get") as mock_get:
@@ -199,6 +205,7 @@ class TestLLMClient:
         assert "Summary" in LLMClient._DEFAULT_USER_INSTRUCTIONS
         assert "Action Items" in LLMClient._DEFAULT_USER_INSTRUCTIONS
 
+    @pytest.mark.asyncio
     async def test_is_available_false_when_no_key(self) -> None:
         """Test that LLMClient returns False when no API key is configured."""
         with patch("src.summarization.providers.openai.AsyncOpenAI") as mock_client_class:
