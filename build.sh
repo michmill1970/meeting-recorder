@@ -100,7 +100,6 @@ if [[ "$PLATFORM" == "macos" ]]; then
         --windowed \
         --icon="icons/meeting-recorder-icon.png" \
         --add-data "whisper-diarization:whisper-diarization" \
-        --add-data "src/ui/styles/dark_theme.qss:src/ui/styles" \
         --hidden-import PySide6.QtCore \
         --hidden-import PySide6.QtGui \
         --hidden-import PySide6.QtWidgets \
@@ -135,7 +134,6 @@ elif [[ "$(uname)" == "Linux" ]]; then
         --name="meeting-recorder" \
         --onefile \
         --add-data "whisper-diarization:whisper-diarization" \
-        --add-data "src/ui/styles/dark_theme.qss:src/ui/styles" \
         --hidden-import PySide6.QtCore \
         --hidden-import PySide6.QtGui \
         --hidden-import PySide6.QtWidgets \
@@ -165,7 +163,6 @@ else
         --name="meeting-recorder" \
         --windowed \
         --add-data "whisper-diarization:whisper-diarization" \
-        --add-data "src/ui/styles/dark_theme.qss:src/ui/styles" \
         --hidden-import PySide6.QtCore \
         --hidden-import PySide6.QtGui \
         --hidden-import PySide6.QtWidgets \
