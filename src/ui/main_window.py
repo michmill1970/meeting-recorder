@@ -257,7 +257,7 @@ class MainWindow(QMainWindow):
         top_layout.setSpacing(8)
 
         meeting_label = QLabel("Meeting:")
-        meeting_label.setStyleSheet("color: #A0A0B0; font-size: 13px; font-weight: 500;")
+        meeting_label.setStyleSheet("font-size: 13px; font-weight: 500;")
         top_layout.addWidget(meeting_label)
 
         self._meeting_name_edit = QLineEdit()
@@ -785,6 +785,13 @@ class MainWindow(QMainWindow):
 
             self._whisper_client = WhisperClient(self._settings)
             self._llm_client = LLMClient(self._settings)
+
+            # Re-apply theme if it changed
+            from src.ui.styles.themes import apply_theme
+            from PySide6.QtWidgets import QApplication
+
+            apply_theme(QApplication.instance(), self._settings.theme)
+
             self._status_label.setText("Settings saved")
 
     def _export_meeting(self) -> None:
@@ -805,6 +812,14 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """Handle window close."""
+        # Stop running threads gracefully to avoid QThread destructor crashes
+        if self._transcribe_thread and self._transcribe_thread.isRunning():
+            self._transcribe_thread.quit()
+            self._transcribe_thread.wait(3000)
+        if self._summarize_thread and self._summarize_thread.isRunning():
+            self._summarize_thread.quit()
+            self._summarize_thread.wait(3000)
+
         self._recording_engine.stop()
         self._level_manager.stop()
         self._sleep_prevention.stop()

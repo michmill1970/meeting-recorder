@@ -61,7 +61,7 @@ class _SliderInputRow(QWidget):
         # Label
         self._label = QLabel(label)
         self._label.setToolTip(tooltip)
-        self._label.setStyleSheet("color: #A0A0B0; font-size: 13px;")
+        self._label.setStyleSheet("font-size: 13px;")
         layout.addWidget(self._label)
 
         layout.addStretch()
@@ -75,10 +75,10 @@ class _SliderInputRow(QWidget):
         self._slider.setValue(int((value - min_val) / step))
         self._slider.setFixedWidth(200)
         self._slider.setStyleSheet(
-            "QSlider::groove:horizontal { background: #2A2A3A; height: 6px; border-radius: 3px; } "
-            "QSlider::handle:horizontal { background: #6C63FF; width: 16px; margin: -5px 0; border-radius: 8px; } "
-            "QSlider::handle:horizontal:hover { background: #7B73FF; } "
-            "QSlider::sub-page:horizontal { background: #6C63FF; border-radius: 3px; }"
+            "QSlider::groove:horizontal { height: 6px; border-radius: 3px; } "
+            "QSlider::handle:horizontal { width: 16px; margin: -5px 0; border-radius: 8px; } "
+            "QSlider::handle:horizontal:hover { } "
+            "QSlider::sub-page:horizontal { border-radius: 3px; }"
         )
         self._slider.valueChanged.connect(self._on_slider_changed)
         layout.addWidget(self._slider)
@@ -90,9 +90,8 @@ class _SliderInputRow(QWidget):
         self._edit.setFixedWidth(72)
         self._edit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self._edit.setStyleSheet(
-            "QLineEdit { background-color: #1A1A26; color: #E0E0E5; border: 1px solid #2A2A3A; "
-            "border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: monospace; } "
-            "QLineEdit:focus { border-color: #6C63FF; }"
+            "QLineEdit { border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: monospace; } "
+            "QLineEdit:focus { }"
         )
         self._edit.textChanged.connect(self._on_edit_changed)
         layout.addWidget(self._edit)
@@ -169,9 +168,8 @@ class _SpinBoxRow(QWidget):
         self._spin.setValue(value)
         self._spin.setFixedWidth(80)
         self._spin.setStyleSheet(
-            "QSpinBox { background-color: #1A1A26; color: #E0E0E5; border: 1px solid #2A2A3A; "
-            "border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: monospace; } "
-            "QSpinBox:focus { border-color: #6C63FF; } "
+            "QSpinBox { border-radius: 6px; padding: 4px 8px; font-size: 13px; font-family: monospace; } "
+            "QSpinBox:focus { } "
             "QSpinBox::up-button, QSpinBox::down-button { width: 16px; }"
         )
         self._spin.setToolTip(tooltip)
@@ -255,7 +253,7 @@ class AdvancedLLMSettingsDialog(QDialog):
         # Preset selector
         preset_layout = QHBoxLayout()
         preset_label = QLabel("Preset:")
-        preset_label.setStyleSheet("color: #A0A0B0; font-size: 13px; font-weight: 500;")
+        preset_label.setStyleSheet("font-size: 13px; font-weight: 500;")
         preset_layout.addWidget(preset_label)
 
         self._preset_combo = QComboBox()
@@ -270,7 +268,7 @@ class AdvancedLLMSettingsDialog(QDialog):
 
         self._preset_desc = QLabel(self._settings.preset_description)
         self._preset_desc.setWordWrap(True)
-        self._preset_desc.setStyleSheet("color: #6E6E7A; font-size: 11px; padding: 2px 0;")
+        self._preset_desc.setStyleSheet("font-size: 11px; padding: 2px 0;")
         preset_layout.addWidget(self._preset_desc)
         preset_layout.addStretch()
         root.addLayout(preset_layout)
@@ -287,13 +285,13 @@ class AdvancedLLMSettingsDialog(QDialog):
         scroll_layout.addLayout(self._create_sampling_section())
 
         sep1 = QLabel()
-        sep1.setStyleSheet("background-color: #2A2A3A; min-height: 1px; max-height: 1px;")
+        sep1.setStyleSheet("min-height: 1px; max-height: 1px;")
         scroll_layout.addWidget(sep1)
 
         scroll_layout.addLayout(self._create_repetition_section())
 
         sep2 = QLabel()
-        sep2.setStyleSheet("background-color: #2A2A3A; min-height: 1px; max-height: 1px;")
+        sep2.setStyleSheet("min-height: 1px; max-height: 1px;")
         scroll_layout.addWidget(sep2)
 
         scroll_layout.addLayout(self._create_diversity_section())
@@ -319,7 +317,7 @@ class AdvancedLLMSettingsDialog(QDialog):
         header = QHBoxLayout()
         header.setSpacing(4)
         title_lbl = QLabel("Sampling")
-        title_lbl.setStyleSheet("color: #E8E8ED; font-size: 13px; font-weight: 600;")
+        title_lbl.setStyleSheet("font-size: 13px; font-weight: 600;")
         header.addWidget(title_lbl)
         header.addStretch()
         layout.addLayout(header)
@@ -391,7 +389,7 @@ class AdvancedLLMSettingsDialog(QDialog):
         header = QHBoxLayout()
         header.setSpacing(4)
         title_lbl = QLabel("Repetition")
-        title_lbl.setStyleSheet("color: #E8E8ED; font-size: 13px; font-weight: 600;")
+        title_lbl.setStyleSheet("font-size: 13px; font-weight: 600;")
         header.addWidget(title_lbl)
         header.addStretch()
         layout.addLayout(header)
@@ -421,7 +419,7 @@ class AdvancedLLMSettingsDialog(QDialog):
         header = QHBoxLayout()
         header.setSpacing(4)
         title_lbl = QLabel("Diversity")
-        title_lbl.setStyleSheet("color: #E8E8ED; font-size: 13px; font-weight: 600;")
+        title_lbl.setStyleSheet("font-size: 13px; font-weight: 600;")
         header.addWidget(title_lbl)
         header.addStretch()
         layout.addLayout(header)
@@ -466,7 +464,7 @@ class AdvancedLLMSettingsDialog(QDialog):
 
         lbl = QLabel(label)
         lbl.setToolTip(tooltip)
-        lbl.setStyleSheet("color: #A0A0B0; font-size: 13px;")
+        lbl.setStyleSheet("font-size: 13px;")
         layout.addWidget(lbl)
         layout.addStretch()
         layout.addWidget(widget)

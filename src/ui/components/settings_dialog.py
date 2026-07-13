@@ -34,6 +34,7 @@ from src.models.schemas import (
 from src.settings.manager import Settings, SettingsManager
 from src.settings.passphrase_manager import PassphraseManager
 from src.ui.components.advanced_llm_dialog import AdvancedLLMSettingsDialog
+from src.ui.styles.themes import THEMES
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,10 @@ class SettingsDialog(QDialog):
 
         # Tab widget
         self._tabs = QTabWidget()
-        self._tabs.setStyleSheet("QTabWidget::pane { border: 1px solid #2A2A3A; border-radius: 10px; background-color: #1A1A26; }")
+        self._tabs.setStyleSheet("QTabWidget::pane { border-radius: 10px; }")
+
+        # Appearance tab
+        self._tabs.addTab(self._create_appearance_tab(), "Appearance")
 
         # Recording tab
         self._tabs.addTab(self._create_recording_tab(), "Recording")
@@ -109,6 +113,58 @@ class SettingsDialog(QDialog):
         # Load current values
         self._load_values()
 
+    def _create_appearance_tab(self) -> QWidget:
+        """Create the Appearance settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(16)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        # Theme selector section
+        theme_layout = QVBoxLayout()
+        theme_layout.setSpacing(6)
+
+        theme_label = QLabel("Color Scheme:")
+        theme_label.setStyleSheet("font-size: 13px; font-weight: 500;")
+        theme_layout.addWidget(theme_label)
+
+        self._theme_combo = QComboBox()
+        for theme in THEMES:
+            self._theme_combo.addItem(
+                "%s — %s" % (theme.label, theme.description), theme.name
+            )
+        idx = self._theme_combo.findData(self._settings.theme)
+        if idx >= 0:
+            self._theme_combo.setCurrentIndex(idx)
+        theme_layout.addWidget(self._theme_combo)
+
+        # Theme description label
+        current_theme = None
+        for t in THEMES:
+            if t.name == self._settings.theme:
+                current_theme = t
+                break
+        self._theme_description = QLabel(
+            current_theme.description if current_theme else ""
+        )
+        self._theme_description.setWordWrap(True)
+        self._theme_description.setStyleSheet("font-size: 11px; padding: 4px 0; font-style: italic;")
+        theme_layout.addWidget(self._theme_description)
+
+        self._theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        layout.addLayout(theme_layout)
+
+        layout.addStretch()
+        return widget
+
+    def _on_theme_changed(self, index: int) -> None:
+        """Update theme description when theme selection changes."""
+        theme_name = self._theme_combo.itemData(index)
+        for t in THEMES:
+            if t.name == theme_name:
+                self._theme_description.setText(t.description)
+                break
+
     def _create_recording_tab(self) -> QWidget:
         """Create the recording settings tab."""
         widget = QWidget()
@@ -121,7 +177,7 @@ class SettingsDialog(QDialog):
         save_dir_layout.setSpacing(6)
 
         save_dir_label = QLabel("Save Directory:")
-        save_dir_label.setStyleSheet("color: #E0E0E5; font-size: 13px; font-weight: 500;")
+        save_dir_label.setStyleSheet("font-size: 13px; font-weight: 500;")
         save_dir_layout.addWidget(save_dir_label)
 
         self._save_dir_edit = QLineEdit()
@@ -138,7 +194,7 @@ class SettingsDialog(QDialog):
 
         # Separator
         separator1 = QLabel()
-        separator1.setStyleSheet("background-color: #2A2A3A; min-height: 1px; max-height: 1px;")
+        separator1.setStyleSheet("min-height: 1px; max-height: 1px;")
         layout.addWidget(separator1)
 
         # Audio format section
@@ -146,7 +202,7 @@ class SettingsDialog(QDialog):
         format_layout.setSpacing(6)
 
         format_label = QLabel("Recording Format:")
-        format_label.setStyleSheet("color: #E0E0E5; font-size: 13px; font-weight: 500;")
+        format_label.setStyleSheet("font-size: 13px; font-weight: 500;")
         format_layout.addWidget(format_label)
 
         self._format_combo = QComboBox()
@@ -165,14 +221,14 @@ class SettingsDialog(QDialog):
         current_fmt = self._settings.recording.audio_format
         self._format_hint = QLabel(current_fmt.hint)
         self._format_hint.setWordWrap(True)
-        self._format_hint.setStyleSheet("color: #6E6E7A; font-size: 11px; padding: 2px 0;")
+        self._format_hint.setStyleSheet("font-size: 11px; padding: 2px 0;")
         format_layout.addWidget(self._format_hint)
 
         layout.addLayout(format_layout)
 
         # Separator
         separator2 = QLabel()
-        separator2.setStyleSheet("background-color: #2A2A3A; min-height: 1px; max-height: 1px;")
+        separator2.setStyleSheet("min-height: 1px; max-height: 1px;")
         layout.addWidget(separator2)
 
         # Fixed settings section
@@ -189,11 +245,11 @@ class SettingsDialog(QDialog):
             row_layout.setSpacing(8)
 
             label = QLabel(f"{label_text}")
-            label.setStyleSheet("color: #E0E0E5; font-size: 13px; font-weight: 500;")
+            label.setStyleSheet("font-size: 13px; font-weight: 500;")
             row_layout.addWidget(label)
 
             value = QLabel(value_text)
-            value.setStyleSheet("color: #A0A0B0; font-size: 13px;")
+            value.setStyleSheet("font-size: 13px;")
             row_layout.addWidget(value)
             row_layout.addStretch()
 
@@ -278,7 +334,7 @@ class SettingsDialog(QDialog):
             row = QHBoxLayout()
             row.setSpacing(12)
             lbl = QLabel(label_text)
-            lbl.setStyleSheet("color: #E0E0E5; font-size: 13px; font-weight: 500;")
+            lbl.setStyleSheet("font-size: 13px; font-weight: 500;")
             lbl.setFixedWidth(120)
             lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row.addWidget(lbl)
@@ -343,23 +399,19 @@ class SettingsDialog(QDialog):
 
         # Separator
         sep = QLabel()
-        sep.setStyleSheet("background-color: #2A2A3A; min-height: 1px; max-height: 1px;")
+        sep.setStyleSheet("min-height: 1px; max-height: 1px;")
         layout.addWidget(sep)
 
         # Advanced LLM settings button
         self._adv_btn = QPushButton("Advanced LLM Settings…")
         self._adv_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2A2A3A;
-                color: #E0E0E5;
-                border: 1px solid #3A3A4A;
+                border: 1px solid;
                 border-radius: 6px;
                 padding: 8px 16px;
                 font-size: 13px;
             }
             QPushButton:hover {
-                background-color: #3A3A4A;
-                border-color: #6C63FF;
             }
         """)
         self._adv_btn.clicked.connect(self._open_advanced_llm_settings)
@@ -382,21 +434,21 @@ class SettingsDialog(QDialog):
             "when available."
         )
         info.setWordWrap(True)
-        info.setStyleSheet("color: #A0A0B0; font-size: 12px; padding: 4px 0;")
+        info.setStyleSheet("font-size: 12px; padding: 4px 0;")
         layout.addWidget(info)
 
         # Keychain status
         status_layout = QHBoxLayout()
         status_label = QLabel("Keychain:")
-        status_label.setStyleSheet("color: #E0E0E5; font-size: 13px; font-weight: 500;")
+        status_label.setStyleSheet("font-size: 13px; font-weight: 500;")
         status_layout.addWidget(status_label)
         self._keychain_status = QLabel(
             "Unavailable" if not self._passphrase_manager.keyring_available else "Available"
         )
         self._keychain_status.setStyleSheet(
-            "color: #FF6B6B; font-size: 12px;"
+            "font-size: 12px;"
             if not self._passphrase_manager.keyring_available
-            else "color: #6BCB77; font-size: 12px;"
+            else "font-size: 12px;"
         )
         status_layout.addWidget(self._keychain_status)
         status_layout.addStretch()
@@ -404,7 +456,7 @@ class SettingsDialog(QDialog):
 
         # Separator
         sep1 = QLabel()
-        sep1.setStyleSheet("background-color: #2A2A3A; min-height: 1px; max-height: 1px;")
+        sep1.setStyleSheet("min-height: 1px; max-height: 1px;")
         layout.addWidget(sep1)
 
         # Passphrase section
@@ -412,7 +464,7 @@ class SettingsDialog(QDialog):
         pp_layout.setSpacing(12)
 
         self._pp_check = QCheckBox("Enable encryption")
-        self._pp_check.setStyleSheet("color: #E0E0E5; font-size: 13px;")
+        self._pp_check.setStyleSheet("font-size: 13px;")
         pp_layout.addRow("", self._pp_check)
 
         # Create passphrase input widgets first
@@ -453,16 +505,12 @@ class SettingsDialog(QDialog):
         self._change_pp_btn = QPushButton("Change Passphrase")
         self._change_pp_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2A2A3A;
-                color: #E0E0E5;
-                border: 1px solid #3A3A4A;
+                border: 1px solid;
                 border-radius: 6px;
                 padding: 6px 12px;
                 font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #3A3A4A;
-                border-color: #6C63FF;
             }
         """)
         self._change_pp_btn.clicked.connect(self._change_passphrase)
@@ -472,15 +520,12 @@ class SettingsDialog(QDialog):
         self._remove_pp_btn = QPushButton("Remove Passphrase")
         self._remove_pp_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2A2A3A;
                 color: #FF6B6B;
-                border: 1px solid #3A3A4A;
                 border-radius: 6px;
                 padding: 6px 12px;
                 font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #3A3A4A;
                 border-color: #FF6B6B;
             }
         """)
@@ -493,7 +538,7 @@ class SettingsDialog(QDialog):
 
         # Migration notice
         self._migration_label = QLabel("")
-        self._migration_label.setStyleSheet("color: #FFD166; font-size: 11px;")
+        self._migration_label.setStyleSheet("font-size: 11px;")
         self._migration_label.setWordWrap(True)
         layout.addWidget(self._migration_label)
 
@@ -621,6 +666,10 @@ class SettingsDialog(QDialog):
 
     def _save_values(self) -> None:
         """Save UI values to settings object."""
+        theme_name = self._theme_combo.currentData()
+        if theme_name:
+            self._settings.theme = theme_name
+
         self._settings.recording.save_dir = self._save_dir_edit.text()
         fmt_data = self._format_combo.currentData()
         self._settings.recording.audio_format = (

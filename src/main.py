@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 
 from src.settings.manager import Settings, SettingsManager
 from src.settings.passphrase_manager import PassphraseManager
 from src.ui.main_window import MainWindow
-from src.ui.styles.dark_theme import DARK_THEME  # type: ignore[import-untyped]
+from src.ui.styles.themes import apply_theme, DEFAULT_THEME_NAME
 
 
 def setup_logging() -> None:
@@ -38,8 +39,13 @@ def main() -> None:
     logger.info("Starting Meeting Recorder...")
 
     app = QApplication(sys.argv)
+    # Make palette changes from stylesheets propagate to child widgets
+    app.setAttribute(Qt.AA_UseStyleSheetPropagationInWidgetStyles, True)
     app.setApplicationName("Meeting Recorder")
     app.setOrganizationName("MeetingRecorder")
+
+    # Use Fusion style — neutral base that works well with custom palettes
+    app.setStyle("Fusion")
 
     # Initialize passphrase manager (tries keychain first)
     passphrase_manager = PassphraseManager()
@@ -65,8 +71,8 @@ def main() -> None:
             # The Security tab will show encryption enabled and prompt again
             logger.warning("No passphrase provided — settings with encrypted credentials may not work correctly")
 
-    # Apply dark theme
-    app.setStyleSheet(DARK_THEME)
+    # Apply selected theme
+    apply_theme(app, settings.theme or DEFAULT_THEME_NAME)
 
     # Create and show main window
     window = MainWindow(settings)

@@ -192,6 +192,7 @@ class Settings(BaseModel):
     whisper: WhisperSettings = Field(default_factory=WhisperSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     encryption_enabled: bool = False
+    theme: str = "modern_dark"
 
     def model_dump_filtered(self) -> dict[str, Any]:
         """Dump settings, excluding empty sensitive fields."""
