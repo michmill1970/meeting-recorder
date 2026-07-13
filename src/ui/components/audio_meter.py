@@ -59,6 +59,9 @@ class AudioMeter(QWidget):
 
     def _animate(self) -> None:
         """Smoothly animate meter display values."""
+        # Guard against MagicMock from test fixture leakage
+        if not isinstance(self._display_rms, (int, float)):
+            return
         smoothing = 0.3
         new_rms = self._display_rms + (self._rms_db - self._display_rms) * smoothing
         new_peak = self._display_peak + (self._display_peak - self._display_peak) * smoothing

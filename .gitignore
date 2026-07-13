@@ -41,6 +41,7 @@ htmlcov/
 
 # Transcripts and summaries (user data)
 *.txt
+!requirements*.txt
 !README.md
 *.md
 
