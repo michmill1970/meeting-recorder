@@ -1,0 +1,16 @@
+# Core dependencies
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+PySide6>=6.6.0
+PyAudio>=0.2.14
+numpy>=1.24.0
+openai>=1.0.0
+anthropic>=0.18.0
+requests>=2.31.0
+
+# Whisper-diarization dependencies (required for transcription)
+mlx-whisper>=0.4.0
+pyannote.audio>=3.3.0
+torch>=2.2.0
+torchaudio>=2.2.0
+omegaconf>=2.3.0

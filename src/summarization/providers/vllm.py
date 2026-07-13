@@ -6,6 +6,7 @@ vLLM exposes an OpenAI-compatible API on localhost:8000 by default.
 from __future__ import annotations
 
 import logging
+import asyncio
 from typing import Optional
 
 import requests
@@ -36,6 +37,9 @@ class VLLMProvider(BaseLLMClient):
     ) -> Optional[str]:
         """Generate response using vLLM API (OpenAI-compatible)."""
         try:
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             url = f"{self._base_url}/chat/completions"
             messages = []
             if system_prompt:
@@ -49,6 +53,10 @@ class VLLMProvider(BaseLLMClient):
             }
 
             response = requests.post(url, json=payload, timeout=300)
+
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             response.raise_for_status()
 
             data = response.json()
@@ -56,6 +64,8 @@ class VLLMProvider(BaseLLMClient):
             logger.info("vLLM generation complete: %d characters", len(content or ""))
             return content
 
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error("vLLM generation failed: %s", e)
             return None

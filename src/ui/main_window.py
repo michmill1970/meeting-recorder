@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QInputDialog,
     QProgressBar,
+    QPushButton,
     QVBoxLayout,
     QWidget,
     QLineEdit,
@@ -27,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from src.models.schemas import MeetingStatus, RecordingSession
 from src.settings.manager import Settings, SettingsManager
+from src.settings.passphrase_manager import PassphraseManager
 from src.ui.components.audio_meter import AudioMeter
 from src.ui.components.recording_panel import RecordingPanel
 from src.ui.components.summary_panel import SummaryPanel
@@ -49,11 +53,19 @@ class TranscribeThread(QThread):
         session_dir: Path,
         audio_path: Path,
         whisper_client,
+        cancelled_ref=None,
     ):
         super().__init__()
         self._session_dir = session_dir
         self._audio_path = audio_path
         self._whisper_client = whisper_client
+        self._cancelled_ref = cancelled_ref
+
+    def _is_cancelled(self) -> bool:
+        """Check if the operation was cancelled."""
+        if self._cancelled_ref is not None:
+            return self._cancelled_ref()
+        return False
 
     def run(self) -> None:
         """Run transcription."""
@@ -65,6 +77,12 @@ class TranscribeThread(QThread):
 
         try:
             self.progress.emit("Starting transcription...")
+
+            if self._is_cancelled():
+                self._whisper_client.cancel()
+                self.error.emit("Transcription cancelled")
+                self.finished.emit()
+                return
 
             if not self._audio_path or not self._audio_path.exists():
                 self.error.emit(f"Audio file not found: {self._audio_path}")
@@ -79,6 +97,12 @@ class TranscribeThread(QThread):
 
             transcript = self._whisper_client.transcribe(self._audio_path, session)
 
+            if self._is_cancelled():
+                self._whisper_client.cancel()
+                self.error.emit("Transcription cancelled")
+                self.finished.emit()
+                return
+
             if transcript is None:
                 self.error.emit("Transcription failed. Check logs for details.")
                 self.finished.emit()
@@ -87,6 +111,9 @@ class TranscribeThread(QThread):
             self.transcript_ready.emit(transcript)
             self.finished.emit()
 
+        except asyncio.CancelledError:
+            self.error.emit("Transcription cancelled")
+            self.finished.emit()
         except Exception as e:
             self.error.emit(f"Error during processing: {e}")
             logger.exception("Processing thread error")
@@ -105,10 +132,18 @@ class SummarizeThread(QThread):
         self,
         transcript: str,
         llm_client,
+        cancelled_ref=None,
     ):
         super().__init__()
         self._transcript = transcript
         self._llm_client = llm_client
+        self._cancelled_ref = cancelled_ref
+
+    def _is_cancelled(self) -> bool:
+        """Check if the operation was cancelled."""
+        if self._cancelled_ref is not None:
+            return self._cancelled_ref()
+        return False
 
     def run(self) -> None:
         """Run summarization."""
@@ -117,6 +152,13 @@ class SummarizeThread(QThread):
 
         try:
             self.progress.emit("Generating summary...")
+
+            if self._is_cancelled():
+                self._llm_client.cancel()
+                self.error.emit("Summarization cancelled")
+                self.finished.emit()
+                return
+
             # Use a dedicated event loop to avoid conflicts with any existing loop
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -127,6 +169,12 @@ class SummarizeThread(QThread):
             finally:
                 loop.close()
 
+            if self._is_cancelled():
+                self._llm_client.cancel()
+                self.error.emit("Summarization cancelled")
+                self.finished.emit()
+                return
+
             if summary is None:
                 self.error.emit("Summarization failed. Check LLM configuration.")
                 self.finished.emit()
@@ -135,6 +183,9 @@ class SummarizeThread(QThread):
             self.summary_ready.emit(summary)
             self.finished.emit()
 
+        except asyncio.CancelledError:
+            self.error.emit("Summarization cancelled")
+            self.finished.emit()
         except Exception as e:
             self.error.emit(f"Error during processing: {e}")
             logger.exception("Processing thread error")
@@ -155,11 +206,16 @@ class MainWindow(QMainWindow):
     def __init__(self, settings: Settings):
         super().__init__()
         self._settings = settings
-        self._settings_manager = SettingsManager()
+        self._passphrase_manager = PassphraseManager()
+        self._settings_manager = SettingsManager(
+            passphrase_manager=self._passphrase_manager
+        )
         self._session = None
         self._transcribe_thread: Optional[TranscribeThread] = None
         self._summarize_thread: Optional[SummarizeThread] = None
         self._pending_transcript: Optional[str] = None
+        self._cancelled = False
+        self._cancel_button: Optional[QPushButton] = None
 
         # Import here to avoid issues if modules aren't available
         from src.recording.engine import RecordingEngine
@@ -206,7 +262,7 @@ class MainWindow(QMainWindow):
 
         self._meeting_name_edit = QLineEdit()
         self._meeting_name_edit.setPlaceholderText("Enter meeting name (default: date-time)")
-        default_name = __import__("datetime").datetime.now().strftime("%Y-%m-%d_%H-%M")
+        default_name = datetime.now().strftime("%Y-%m-%d_%H-%M")
         self._meeting_name_edit.setText(default_name)
         self._meeting_name_edit.setMinimumHeight(36)
         top_layout.addWidget(self._meeting_name_edit)
@@ -253,6 +309,12 @@ class MainWindow(QMainWindow):
         self._progress_bar.setVisible(False)
         self._progress_bar.setFixedWidth(200)
         self.statusBar().addWidget(self._progress_bar)
+
+        self._cancel_button = QPushButton("Cancel")
+        self._cancel_button.setVisible(False)
+        self._cancel_button.setFixedWidth(80)
+        self._cancel_button.clicked.connect(self._on_cancel)
+        self.statusBar().addWidget(self._cancel_button)
 
         # Menu bar
         self._setup_menu()
@@ -314,9 +376,7 @@ class MainWindow(QMainWindow):
         """Handle record button click."""
         meeting_name = self._meeting_name_edit.text().strip()
         if not meeting_name:
-            meeting_name = __import__("datetime").datetime.now().strftime(
-                "%Y-%m-%d_%H-%M"
-            )
+            meeting_name = datetime.now().strftime("%Y-%m-%d_%H-%M")
 
         from src.models.schemas import RecordingSession
 
@@ -372,10 +432,30 @@ class MainWindow(QMainWindow):
         if self._session and self._session.audio_path:
             self._process_meeting()
 
+    def _on_cancel(self) -> None:
+        """Cancel the currently running processing operation."""
+        self._cancelled = True
+
+        # Cancel transcription thread and subprocess
+        if self._transcribe_thread and self._transcribe_thread.isRunning():
+            self._whisper_client.cancel()
+
+        # Cancel summarization thread and LLM client
+        if self._summarize_thread and self._summarize_thread.isRunning():
+            self._llm_client.cancel()
+
+        self._cancel_button.setVisible(False)
+        self._status_label.setText("Processing cancelled")
+
+        # Clean up thread references
+        self._transcribe_thread = None
+        self._summarize_thread = None
+
     def _on_mic_selected(self, index: int) -> None:
         """Handle microphone selection."""
         self._settings.recording.mic_device_id = index
-        self._settings_manager.save(self._settings)
+        passphrase = self._passphrase_manager.get_passphrase()
+        self._settings_manager.save(self._settings, passphrase=passphrase)
 
     def _on_gain_changed(self, gain: float) -> None:
         """Handle manual gain change."""
@@ -472,11 +552,15 @@ class MainWindow(QMainWindow):
 
         audio_path = audio_files[0]
 
+        self._cancelled = False
+        self._cancel_button.setVisible(True)
+
         # Start transcription
         self._transcribe_thread = TranscribeThread(
             meeting_dir,
             audio_path,
             self._whisper_client,
+            cancelled_ref=lambda: self._cancelled,
         )
 
         self._transcribe_thread.progress.connect(self._on_processing_progress)
@@ -493,10 +577,14 @@ class MainWindow(QMainWindow):
     # Processing
     def _process_meeting(self) -> None:
         """Start transcription."""
+        self._cancelled = False
+        self._cancel_button.setVisible(True)
+
         self._transcribe_thread = TranscribeThread(
             self._session.meeting_dir,  # type: ignore[union-attr]
             self._session.audio_path,  # type: ignore[union-attr]
             self._whisper_client,
+            cancelled_ref=lambda: self._cancelled,
         )
 
         self._transcribe_thread.progress.connect(self._on_processing_progress)
@@ -517,6 +605,11 @@ class MainWindow(QMainWindow):
 
     def _on_transcript_ready(self, transcript: str) -> None:
         """Handle transcript completion — show speaker rename dialog."""
+        if self._cancelled:
+            self._progress_bar.setVisible(False)
+            self._cancel_button.setVisible(False)
+            self._status_label.setText("Processing cancelled")
+            return
         self._transcript_panel.set_transcript(transcript)
         self._pending_transcript = transcript
 
@@ -592,6 +685,7 @@ class MainWindow(QMainWindow):
         self._summarize_thread = SummarizeThread(
             transcript,
             self._llm_client,
+            cancelled_ref=lambda: self._cancelled,
         )
 
         self._summarize_thread.progress.connect(self._on_processing_progress)
@@ -622,6 +716,8 @@ class MainWindow(QMainWindow):
         """Handle processing error."""
         self._status_label.setText("Error")
         self._progress_bar.setVisible(False)
+        self._cancel_button.setVisible(False)
+        self._cancelled = False
 
         reply = QMessageBox.question(
             self,
@@ -636,6 +732,8 @@ class MainWindow(QMainWindow):
     def _on_processing_finished(self) -> None:
         """Handle processing thread completion."""
         self._progress_bar.setVisible(False)
+        self._cancel_button.setVisible(False)
+        self._cancelled = False
 
     # Utility
     def _update_level_display(self) -> None:
@@ -658,11 +756,16 @@ class MainWindow(QMainWindow):
 
     def _show_settings(self) -> None:
         """Show settings dialog."""
-        dialog = SettingsDialog(self._settings, self)
+        dialog = SettingsDialog(
+            self._settings,
+            passphrase_manager=self._passphrase_manager,
+            parent=self,
+        )
         if dialog.exec() == QDialog.Accepted:
-            self._settings_manager.save(self._settings)
+            passphrase = self._passphrase_manager.get_passphrase()
+            self._settings_manager.save(self._settings, passphrase=passphrase)
             # Reload from disk to get properly-typed enum values
-            self._settings = self._settings_manager.load()
+            self._settings = self._settings_manager.load(passphrase=passphrase)
             # Update clients with new settings
             from src.transcription.whisper_client import WhisperClient
             from src.summarization.llm_client import LLMClient
@@ -692,5 +795,6 @@ class MainWindow(QMainWindow):
         self._recording_engine.stop()
         self._level_manager.stop()
         self._sleep_prevention.stop()
-        self._settings_manager.save(self._settings)
+        passphrase = self._passphrase_manager.get_passphrase()
+        self._settings_manager.save(self._settings, passphrase=passphrase)
         event.accept()

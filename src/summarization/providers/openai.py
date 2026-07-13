@@ -6,6 +6,7 @@ Works with OpenAI API, LM Studio, and vLLM (all use OpenAI-compatible endpoints)
 from __future__ import annotations
 
 import logging
+import asyncio
 from typing import Optional
 
 from openai import AsyncOpenAI
@@ -48,6 +49,9 @@ class OpenAIProvider(BaseLLMClient):
     ) -> Optional[str]:
         """Generate response using OpenAI-compatible API."""
         try:
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             if self._client is None:
                 self._client = self._init_client()
 
@@ -62,6 +66,9 @@ class OpenAIProvider(BaseLLMClient):
                 messages=messages,
                 **gen_params,
             )
+
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
 
             content = response.choices[0].message.content
             logger.info("OpenAI generation complete: %d characters", len(content or ""))

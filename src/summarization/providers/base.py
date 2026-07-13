@@ -18,10 +18,19 @@ class BaseLLMClient(ABC):
             generation_settings: Advanced LLM parameters (temperature, top_p, etc.)
         """
         self._gen = generation_settings or LLMGenerationSettings()
+        self._cancelled = False
 
     def _get_gen_params(self) -> dict[str, Any]:
         """Extract generation parameters as a dict for API calls."""
         return self._gen.to_dict()
+
+    def cancel(self) -> None:
+        """Cancel the current generation."""
+        self._cancelled = True
+
+    def cancelled(self) -> bool:
+        """Check if the current operation has been cancelled."""
+        return self._cancelled
 
     @abstractmethod
     async def generate(

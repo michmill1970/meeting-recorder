@@ -9,6 +9,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from src.settings.manager import Settings, SettingsManager
+from src.settings.passphrase_manager import PassphraseManager
 from src.ui.main_window import MainWindow
 from src.ui.styles.dark_theme import DARK_THEME  # type: ignore[import-untyped]
 
@@ -40,9 +41,15 @@ def main() -> None:
     app.setApplicationName("Meeting Recorder")
     app.setOrganizationName("MeetingRecorder")
 
-    # Load settings
-    settings_manager = SettingsManager()
-    settings = settings_manager.load()
+    # Initialize passphrase manager (tries keychain first)
+    passphrase_manager = PassphraseManager()
+    passphrase = passphrase_manager.get_passphrase()
+
+    # Load settings with passphrase if available
+    settings_manager = SettingsManager(
+        passphrase_manager=passphrase_manager
+    )
+    settings = settings_manager.load(passphrase=passphrase)
 
     # Apply dark theme
     app.setStyleSheet(DARK_THEME)

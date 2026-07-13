@@ -11,7 +11,9 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import wave
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -44,6 +46,7 @@ class RecordingEngine:
         self._recording_thread: Optional[threading.Thread] = None
         self._running = False
         self._paused = False
+        self._pause_start_mono: Optional[float] = None
         self._using_wav_writer: bool = True
         # Callback for audio level updates (RMS, peak)
         self._level_callback: Optional[Callable[[float, float], None]] = None
@@ -72,12 +75,14 @@ class RecordingEngine:
     @property
     def is_recording(self) -> bool:
         """Check if engine is actively recording."""
-        return self._running and not self._paused
+        with self._lock:
+            return self._running and not self._paused
 
     @property
     def is_paused(self) -> bool:
         """Check if recording is paused."""
-        return self._paused
+        with self._lock:
+            return self._paused
 
     @property
     def audio_buffer(self) -> Optional[np.ndarray]:
@@ -109,7 +114,7 @@ class RecordingEngine:
         self._running = True
         self._paused = False
         session.status = MeetingStatus.RECORDING
-        session.start_time = session.start_time or __import__("datetime").datetime.now()
+        session.start_time = session.start_time or datetime.now()
         session.total_pause_duration = 0.0
         session.elapsed_time = 0.0
 
@@ -223,8 +228,6 @@ class RecordingEngine:
 
     def _record_loop(self) -> None:
         """Main recording loop - tracks elapsed time."""
-        import time
-
         last_time = time.monotonic()
 
         while self._running:
@@ -234,56 +237,51 @@ class RecordingEngine:
                 if self._session:
                     self._session.elapsed_time += delta
                 last_time = now
-            else:
-                # When paused, track pause duration
-                if self._session and self._session.pause_start_time is None:
-                    self._session.pause_start_time = __import__("datetime").datetime.now()
-
             time.sleep(0.1)  # Update every 100ms
-
-        # Cleanup pause tracking
-        if self._session and self._session.pause_start_time:
-            pause_end = __import__("datetime").datetime.now()
-            pause_duration = (
-                pause_end - self._session.pause_start_time
-            ).total_seconds()
-            self._session.total_pause_duration += pause_duration
-            self._session.pause_start_time = None
 
     def pause(self) -> None:
         """Pause recording without stopping."""
-        if not self._running or self._paused:
-            return
+        with self._lock:
+            if not self._running or self._paused:
+                return
+            self._paused = True
+            self._pause_start_mono = time.monotonic()
 
-        self._paused = True
         if self._session:
             self._session.status = MeetingStatus.PAUSED
-            self._session.pause_start_time = __import__("datetime").datetime.now()
         logger.info("Recording paused")
 
     def resume(self) -> None:
         """Resume recording after pause."""
-        if not self._running or not self._paused:
-            return
+        with self._lock:
+            if not self._running or not self._paused:
+                return
 
-        # Calculate pause duration
-        if self._session and self._session.pause_start_time:
-            pause_end = __import__("datetime").datetime.now()
-            pause_duration = (
-                pause_end - self._session.pause_start_time
-            ).total_seconds()
+            # Calculate pause duration using monotonic clock
+            pause_duration = 0.0
+            if self._pause_start_mono is not None:
+                pause_duration = time.monotonic() - self._pause_start_mono
+                self._pause_start_mono = None
+
+        if self._session:
             self._session.total_pause_duration += pause_duration
+            self._session.status = MeetingStatus.RECORDING
             self._session.pause_start_time = None
 
         self._paused = False
-        if self._session:
-            self._session.status = MeetingStatus.RECORDING
         logger.info("Recording resumed")
 
     def stop(self) -> None:
         """Stop recording and close all resources."""
-        self._running = False
-        self._paused = False
+        with self._lock:
+            # Calculate remaining pause time if paused when stopped
+            if self._paused and self._pause_start_mono is not None:
+                pause_duration = time.monotonic() - self._pause_start_mono
+                if self._session:
+                    self._session.total_pause_duration += pause_duration
+            self._running = False
+            self._paused = False
+            self._pause_start_mono = None
 
         # Close WAV file if using WAV writer
         if self._wave_file:

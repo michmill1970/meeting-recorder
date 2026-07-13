@@ -116,6 +116,29 @@ class TestSleepPrevention:
         sp = SleepPrevention()
         assert sp._running is False
         assert sp._process is None
+        assert sp._consecutive_failures == 0
+
+    def test_backoff_delay_grows_with_failures(self) -> None:
+        """Backoff delay should increase with consecutive failures."""
+        sp = SleepPrevention()
+
+        sp._consecutive_failures = 0
+        assert sp._backoff_delay() == 5  # base
+
+        sp._consecutive_failures = 1
+        assert sp._backoff_delay() == 10  # 5 * 2^1
+
+        sp._consecutive_failures = 2
+        assert sp._backoff_delay() == 20  # 5 * 2^2
+
+        sp._consecutive_failures = 3
+        assert sp._backoff_delay() == 40  # 5 * 2^3
+
+        sp._consecutive_failures = 4
+        assert sp._backoff_delay() == 60  # capped at MAX
+
+        sp._consecutive_failures = 10
+        assert sp._backoff_delay() == 60  # still capped
 
     def test_start_stop_without_caffeinate(self) -> None:
         """Start/stop should work even if caffeinate fails."""
@@ -160,3 +183,40 @@ class TestSleepPrevention:
             sp.stop()
             # Process should be terminated/cleared
             assert sp._process is None or sp._process.poll() is not None
+
+    def test_failure_resets_on_success(self) -> None:
+        """A successful caffeinate start should reset consecutive failures."""
+        sp = SleepPrevention()
+        sp._consecutive_failures = 5
+
+        with patch("src.utils.sleep_prevention.subprocess.Popen") as mock_popen:
+            mock_process = MagicMock()
+            mock_process.poll.return_value = None  # Still running
+            mock_popen.return_value = mock_process
+
+            sp.start()
+            import time
+            time.sleep(0.2)
+            sp.stop()
+
+            assert sp._consecutive_failures == 0
+
+    def test_gives_up_after_max_failures(self) -> None:
+        """After MAX_FAILURES consecutive failures, the loop should exit."""
+        sp = SleepPrevention()
+        MAX = sp._MAX_FAILURES
+
+        with patch("src.utils.sleep_prevention.subprocess.Popen") as mock_popen:
+            # Always raise OSError to simulate transient failure
+            mock_popen.side_effect = OSError("mock failure")
+
+            # Mock _sleep to avoid real waits
+            sp._sleep = lambda s: None  # type: ignore[assignment]
+
+            sp.start()
+            # Wait for the thread to process — should exit after MAX failures
+            import time
+            time.sleep(0.5)  # Enough for MAX failures with mocked sleep
+            sp.stop()
+
+            assert sp._consecutive_failures == MAX

@@ -145,6 +145,11 @@ MEETING TRANSCRIPT:
                     system_prompt=system_prompt,
                 )
 
+    def cancel(self) -> None:
+        """Cancel the current generation."""
+        if self._provider is not None:
+            self._provider.cancel()
+
     async def is_available(self) -> bool:
         """Check if the configured LLM provider is available."""
         try:

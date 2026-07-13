@@ -7,6 +7,8 @@ from typing import Optional
 
 import anthropic
 
+import asyncio
+
 from src.settings.manager import LLMGenerationSettings
 from src.summarization.providers.base import BaseLLMClient
 
@@ -38,6 +40,9 @@ class AnthropicProvider(BaseLLMClient):
     ) -> Optional[str]:
         """Generate response using Anthropic API."""
         try:
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             if self._client is None:
                 self._client = self._init_client()
 
@@ -52,6 +57,9 @@ class AnthropicProvider(BaseLLMClient):
                 kwargs["system"] = system_prompt
 
             response = await self._client.messages.create(**kwargs)
+
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
 
             content = response.content[0].text
             logger.info("Anthropic generation complete: %d characters", len(content or ""))

@@ -155,3 +155,69 @@ class TestSettingsManager:
         assert loaded.llm.provider == LLMProvider.OLLAMA
         assert loaded.llm.base_url == "http://localhost:11434"
         assert loaded.llm.model == "llama3"
+
+    def test_save_load_encrypted_with_passphrase(self, settings_manager: SettingsManager) -> None:
+        """Sensitive fields should be encrypted when a passphrase is provided."""
+        passphrase = "encryption_pass_123"
+        settings = Settings()
+        settings.whisper.hf_token = "my_secret_hf_token"
+        settings.llm.api_key = "my_secret_api_key"
+
+        settings_manager.save(settings, passphrase=passphrase)
+
+        # Verify the file contains encrypted data (not plaintext)
+        raw = json.loads(settings_manager.SETTINGS_FILE.read_text())
+        assert raw["whisper"]["hf_token"] != "my_secret_hf_token"
+        assert raw["llm"]["api_key"] != "my_secret_api_key"
+        assert raw["whisper"].get("_encrypted") is True
+        assert raw["llm"].get("_encrypted") is True
+
+        # Verify roundtrip — load with same passphrase
+        loaded = settings_manager.load(passphrase=passphrase)
+        assert loaded.whisper.hf_token == "my_secret_hf_token"
+        assert loaded.llm.api_key == "my_secret_api_key"
+
+    def test_load_without_passphrase_keeps_encrypted(self, settings_manager: SettingsManager) -> None:
+        """Loading encrypted data without passphrase should return encrypted blob."""
+        passphrase = "encryption_pass_123"
+        settings = Settings()
+        settings.whisper.hf_token = "secret_token"
+        settings.llm.api_key = "secret_key"
+
+        settings_manager.save(settings, passphrase=passphrase)
+
+        # Load without passphrase — encrypted values are NOT decrypted
+        loaded = settings_manager.load()
+        # Should be the encrypted blob, not the plaintext
+        assert loaded.whisper.hf_token != "secret_token"
+        assert loaded.whisper.hf_token != ""
+        assert loaded.llm.api_key != "secret_key"
+        assert loaded.llm.api_key != ""
+
+    def test_load_with_wrong_passphrase_fails_gracefully(self, settings_manager: SettingsManager) -> None:
+        """Loading encrypted data with wrong passphrase should not crash."""
+        settings = Settings()
+        settings.whisper.hf_token = "secret_token"
+        settings.llm.api_key = "secret_key"
+
+        settings_manager.save(settings, passphrase="correct_pass")
+
+        # Load with wrong passphrase — should not raise, returns empty
+        loaded = settings_manager.load(passphrase="wrong_pass")
+        assert loaded.whisper.hf_token == ""
+        assert loaded.llm.api_key == ""
+
+    def test_plaintext_save_load_without_passphrase(self, settings_manager: SettingsManager) -> None:
+        """Without passphrase, fields should be stored as plaintext (backward compat)."""
+        settings = Settings()
+        settings.whisper.hf_token = "plaintext_token"
+        settings.llm.api_key = "plaintext_key"
+
+        settings_manager.save(settings)  # No passphrase
+
+        # Verify plaintext in file
+        raw = json.loads(settings_manager.SETTINGS_FILE.read_text())
+        assert raw["whisper"]["hf_token"] == "plaintext_token"
+        assert raw["llm"]["api_key"] == "plaintext_key"
+        assert "_encrypted" not in raw["whisper"]
+        assert "_encrypted" not in raw["llm"]

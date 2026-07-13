@@ -5,6 +5,7 @@ Wraps the whisper-diarization transcribe.py as a subprocess call.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -42,6 +43,8 @@ class WhisperClient:
     def __init__(self, settings: Settings):
         self._settings = settings
         self._progress_callback: Optional[Callable[[str], None]] = None
+        self._cancelled = False
+        self._subprocess: Optional[subprocess.Popen] = None
 
     def set_progress_callback(self, callback: Callable[[str], None]) -> None:
         """Set callback for progress updates.
@@ -74,12 +77,13 @@ class WhisperClient:
             logger.error("Hugging Face token not configured")
             return None
 
-        # Build command
+        # Build command — pass token via env var to avoid ps aux exposure
         cmd = [
             "python3", str(WHISPER_SCRIPT),
             str(audio_path),
-            "--hf-token", hf_token,
         ]
+        env = os.environ.copy()
+        env["HF_TOKEN"] = hf_token
 
         # Add speaker constraints if configured
         whisper_cfg = self._settings.whisper
@@ -107,12 +111,19 @@ class WhisperClient:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
+                env=env,
             )
+            self._subprocess = process
 
             output_lines = []
             assert process.stdout is not None
 
             for line in process.stdout:
+                if self._cancelled:
+                    process.terminate()
+                    process.wait()
+                    self._subprocess = None
+                    raise asyncio.CancelledError("Transcription cancelled by user")
                 output_lines.append(line.rstrip())
                 self._emit_progress(line.rstrip())
 
@@ -155,3 +166,17 @@ class WhisperClient:
             self._progress_callback(message)
         else:
             logger.debug("[Whisper] %s", message)
+
+    def cancel(self) -> None:
+        """Cancel the current transcription and terminate the subprocess."""
+        self._cancelled = True
+        if self._subprocess is not None:
+            try:
+                self._subprocess.terminate()
+                self._subprocess.wait(timeout=5)
+            except Exception:
+                try:
+                    self._subprocess.kill()
+                except Exception:
+                    pass
+            self._subprocess = None

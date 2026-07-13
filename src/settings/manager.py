@@ -1,13 +1,15 @@
 """Settings management for the meeting recorder application.
 
 Handles loading, saving, and validation of application settings
-stored in a JSON file.
+stored in a JSON file. Sensitive fields (api_key, hf_token) are
+encrypted when a passphrase is provided via PassphraseManager.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -19,11 +21,20 @@ from src.models.schemas import (
     SummarizationStyle,
     WhisperSpeakerMode,
 )
+from src.settings.encryption import (
+    decrypt_value,
+    encrypt_value,
+    generate_salt,
+)
+from src.settings.passphrase_manager import PassphraseManager
 
 logger = logging.getLogger(__name__)
 
 # Default settings
 DEFAULT_SAVE_DIR = str(Path.home() / "Documents" / "MeetingRecorder")
+
+# File where the encryption salt is stored
+_SALT_FILE = ".encryption_salt"
 
 
 class RecordingSettings(BaseModel):
@@ -198,13 +209,130 @@ class SettingsManager:
     SETTINGS_DIR = Path.home() / ".config" / "meeting-recorder"
     SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 
-    def __init__(self, settings_file: Optional[Path] = None):
+    def __init__(
+        self,
+        settings_file: Optional[Path] = None,
+        passphrase_manager: Optional[PassphraseManager] = None,
+    ):
         if settings_file is not None:
             self.SETTINGS_FILE = settings_file
             self.SETTINGS_DIR = settings_file.parent
+        self._passphrase_manager = passphrase_manager or PassphraseManager()
 
-    def load(self) -> Settings:
-        """Load settings from JSON file. Returns default settings if file doesn't exist."""
+    # -- salt helpers --------------------------------------------------------
+
+    def _load_salt(self) -> str:
+        """Load the encryption salt from disk; generate & persist if missing."""
+        salt_path = self.SETTINGS_DIR / _SALT_FILE
+        if salt_path.exists():
+            return salt_path.read_text(encoding="utf-8").strip()
+        salt = generate_salt().hex()
+        salt_path.write_text(salt, encoding="utf-8")
+        logger.info("Generated new encryption salt")
+        return salt
+
+    # -- encryption helpers --------------------------------------------------
+
+    def _encrypt_sensitive(self, data: dict[str, Any], passphrase: str) -> dict[str, Any]:
+        """Encrypt api_key and hf_token in-place using the given passphrase."""
+        salt = self._load_salt()
+        if passphrase:
+            llm = data.setdefault("llm", {})
+            if llm.get("api_key"):
+                llm["api_key"] = encrypt_value(llm["api_key"], passphrase, bytes.fromhex(salt))
+                llm["_encrypted"] = True
+            whisper = data.setdefault("whisper", {})
+            if whisper.get("hf_token"):
+                whisper["hf_token"] = encrypt_value(whisper["hf_token"], passphrase, bytes.fromhex(salt))
+                whisper["_encrypted"] = True
+        return data
+
+    def _decrypt_sensitive(self, raw: dict[str, Any], passphrase: str) -> dict[str, Any]:
+        """Decrypt api_key and hf_token in-place if they are encrypted."""
+        if not passphrase:
+            return raw
+        salt = self._load_salt()
+        llm = raw.get("llm", {})
+        if llm.get("_encrypted") and llm.get("api_key"):
+            llm["api_key"] = decrypt_value(llm["api_key"], passphrase, bytes.fromhex(salt))
+            llm.pop("_encrypted", None)
+        whisper = raw.get("whisper", {})
+        if whisper.get("_encrypted") and whisper.get("hf_token"):
+            whisper["hf_token"] = decrypt_value(whisper["hf_token"], passphrase, bytes.fromhex(salt))
+            whisper.pop("_encrypted", None)
+        return raw
+
+    # -- migration helpers ---------------------------------------------------
+
+    def _is_plaintext_sensitive(self, raw: dict[str, Any]) -> bool:
+        """Check if sensitive fields are stored as plaintext (not encrypted)."""
+        llm = raw.get("llm", {})
+        whisper = raw.get("whisper", {})
+
+        # If _encrypted flag is not present and values look like real keys
+        if not llm.get("_encrypted") and llm.get("api_key"):
+            # Real keys are typically long strings, not short placeholders
+            if len(llm["api_key"]) > 10:
+                return True
+        if not whisper.get("_encrypted") and whisper.get("hf_token"):
+            if len(whisper["hf_token"]) > 10:
+                return True
+        return False
+
+    def _migrate_to_encrypted(
+        self, settings: Settings, passphrase: str
+    ) -> Settings:
+        """Migrate plaintext sensitive fields to encrypted storage.
+
+        Args:
+            settings: Settings with plaintext sensitive fields.
+            passphrase: The passphrase to use for encryption.
+
+        Returns:
+            Settings object with sensitive fields still in plaintext
+            (they will be encrypted on next save).
+        """
+        # The settings object already has the plaintext values.
+        # On the next save(), they will be encrypted automatically.
+        logger.info("Settings contain plaintext secrets — they will be encrypted on next save")
+        return settings
+
+    def _detect_encryption_state(self) -> str:
+        """Detect the current encryption state of the settings file.
+
+        Returns:
+            "none" — no settings file exists
+            "plaintext" — settings exist with plaintext secrets
+            "encrypted" — settings exist and are encrypted
+            "unknown" — settings file exists but can't determine state
+        """
+        if not self.SETTINGS_FILE.exists():
+            return "none"
+
+        try:
+            with open(self.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+
+            llm = raw.get("llm", {})
+            whisper = raw.get("whisper", {})
+
+            if llm.get("_encrypted") or whisper.get("_encrypted"):
+                return "encrypted"
+            if self._is_plaintext_sensitive(raw):
+                return "plaintext"
+
+            return "none"
+        except (json.JSONDecodeError, OSError):
+            return "unknown"
+
+    # -- public API ----------------------------------------------------------
+
+    def load(self, passphrase: Optional[str] = None) -> Settings:
+        """Load settings from JSON file. Returns default settings if file doesn't exist.
+
+        Args:
+            passphrase: If provided, decrypts sensitive fields (api_key, hf_token).
+        """
         if not self.SETTINGS_FILE.exists():
             logger.info("No settings file found, using defaults")
             return Settings()
@@ -212,6 +340,10 @@ class SettingsManager:
         try:
             with open(self.SETTINGS_FILE, "r", encoding="utf-8") as f:
                 raw = json.load(f)
+
+            # Decrypt sensitive fields if passphrase provided
+            raw = self._decrypt_sensitive(raw, passphrase or "")
+
             # Convert string enum values back to enum instances
             recording = raw.get("recording", {})
             if isinstance(recording.get("audio_format"), str):
@@ -237,23 +369,30 @@ class SettingsManager:
             logger.warning("Failed to load settings: %s, using defaults", e)
             return Settings()
 
-    def save(self, settings: Settings) -> None:
-        """Save settings to JSON file."""
+    def save(self, settings: Settings, passphrase: Optional[str] = None) -> None:
+        """Save settings to JSON file.
+
+        Args:
+            settings: The settings to save.
+            passphrase: If provided, api_key and hf_token are encrypted before saving.
+        """
         try:
             self.SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-            # model_dump() already converts enums to their string values
             data = settings.model_dump()
-            # Don't persist empty API keys
-            if not data.get("llm", {}).get("api_key"):
-                data.setdefault("llm", {})["api_key"] = ""
-            if not data.get("whisper", {}).get("hf_token"):
-                data.setdefault("whisper", {})["hf_token"] = ""
+
+            # Encrypt sensitive fields if passphrase provided
+            data = self._encrypt_sensitive(data, passphrase or "")
+
             with open(self.SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             logger.info("Settings saved to %s", self.SETTINGS_FILE)
         except OSError as e:
             logger.error("Failed to save settings: %s", e)
             raise
+
+    def get_passphrase_manager(self) -> PassphraseManager:
+        """Get the passphrase manager instance."""
+        return self._passphrase_manager
 
     def get_mic_device_info(self, pa_instance: Any) -> list[tuple[int, str]]:
         """Get list of available microphone devices.

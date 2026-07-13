@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 from typing import Optional
 
 import requests
@@ -55,6 +56,9 @@ class OllamaProvider(BaseLLMClient):
     ) -> Optional[str]:
         """Generate response using Ollama /api/generate endpoint."""
         try:
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             url = f"{self._base_url}/api/generate"
             payload = {
                 "model": self._model,
@@ -66,6 +70,10 @@ class OllamaProvider(BaseLLMClient):
                 payload["system"] = system_prompt
 
             response = requests.post(url, json=payload, timeout=300)
+
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             response.raise_for_status()
 
             data = response.json()
@@ -73,6 +81,8 @@ class OllamaProvider(BaseLLMClient):
             logger.info("Ollama generation complete: %d characters", len(content or ""))
             return content
 
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error("Ollama generation failed: %s", e)
             return None
@@ -86,6 +96,9 @@ class OllamaProvider(BaseLLMClient):
         Works with Ollama (v0.1.0+), llama.cpp server, and any OpenAI-compatible API.
         """
         try:
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             url = f"{self._base_url}/v1/chat/completions"
             payload = {
                 "model": self._model,
@@ -95,6 +108,10 @@ class OllamaProvider(BaseLLMClient):
             }
 
             response = requests.post(url, json=payload, timeout=300)
+
+            if self.cancelled():
+                raise asyncio.CancelledError("Summarization cancelled by user")
+
             response.raise_for_status()
 
             data = response.json()
@@ -102,6 +119,8 @@ class OllamaProvider(BaseLLMClient):
             logger.info("OpenAI-compatible chat generation complete: %d characters", len(content or ""))
             return content
 
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.error("OpenAI-compatible chat generation failed: %s", e)
             return None

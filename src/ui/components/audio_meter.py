@@ -64,7 +64,7 @@ class AudioMeter(QWidget):
             return
         smoothing = 0.3
         new_rms = self._display_rms + (self._rms_db - self._display_rms) * smoothing
-        new_peak = self._display_peak + (self._display_peak - self._display_peak) * smoothing
+        new_peak = self._display_peak + (self._peak_db - self._display_peak) * smoothing
 
         if abs(new_rms - self._display_rms) > 0.1 or abs(new_peak - self._display_peak) > 0.1:
             self._display_rms = new_rms

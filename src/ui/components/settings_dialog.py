@@ -1,4 +1,4 @@
-"""Settings dialog with tabs for Recording, Whisper, and LLM configuration."""
+"""Settings dialog with tabs for Recording, Whisper, LLM, and Security configuration."""
 
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ from src.models.schemas import (
     WhisperSpeakerMode,
 )
 from src.settings.manager import Settings
+from src.settings.passphrase_manager import PassphraseManager
 from src.ui.components.advanced_llm_dialog import AdvancedLLMSettingsDialog
 
 logger = logging.getLogger(__name__)
@@ -44,10 +45,16 @@ class SettingsDialog(QDialog):
     proper spacing, and accessible form layout.
     """
 
-    def __init__(self, settings: Settings, parent: Optional[QWidget] = None):
+    def __init__(
+        self,
+        settings: Settings,
+        passphrase_manager: Optional[PassphraseManager] = None,
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
         self._settings = settings
         self._original_settings = settings.model_copy(deep=True)
+        self._passphrase_manager = passphrase_manager or PassphraseManager()
         self.setWindowTitle("Settings")
         self.setMinimumWidth(550)
         self.setMinimumHeight(600)
@@ -76,6 +83,9 @@ class SettingsDialog(QDialog):
 
         # LLM tab
         self._tabs.addTab(self._create_llm_tab(), "LLM")
+
+        # Security tab
+        self._tabs.addTab(self._create_security_tab(), "Security")
 
         layout.addWidget(self._tabs)
 
@@ -358,6 +368,190 @@ class SettingsDialog(QDialog):
 
         return widget
 
+    def _create_security_tab(self) -> QWidget:
+        """Create the Security settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(16)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        # Info label
+        info = QLabel(
+            "Encrypt sensitive settings (API keys, tokens) at rest. "
+            "The encryption passphrase is stored in your system keychain "
+            "when available."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #A0A0B0; font-size: 12px; padding: 4px 0;")
+        layout.addWidget(info)
+
+        # Keychain status
+        status_layout = QHBoxLayout()
+        status_label = QLabel("Keychain:")
+        status_label.setStyleSheet("color: #E0E0E5; font-size: 13px; font-weight: 500;")
+        status_layout.addWidget(status_label)
+        self._keychain_status = QLabel(
+            "Unavailable" if not self._passphrase_manager.keyring_available else "Available"
+        )
+        self._keychain_status.setStyleSheet(
+            "color: #FF6B6B; font-size: 12px;"
+            if not self._passphrase_manager.keyring_available
+            else "color: #6BCB77; font-size: 12px;"
+        )
+        status_layout.addWidget(self._keychain_status)
+        status_layout.addStretch()
+        layout.addLayout(status_layout)
+
+        # Separator
+        sep1 = QLabel()
+        sep1.setStyleSheet("background-color: #2A2A3A; min-height: 1px; max-height: 1px;")
+        layout.addWidget(sep1)
+
+        # Passphrase section
+        pp_layout = QFormLayout()
+        pp_layout.setSpacing(12)
+
+        self._pp_check = QCheckBox("Enable encryption")
+        self._pp_check.setStyleSheet("color: #E0E0E5; font-size: 13px;")
+        pp_layout.addRow("", self._pp_check)
+
+        # Check if passphrase is already set
+        has_passphrase = self._passphrase_manager.get_passphrase() is not None
+        self._pp_check.setChecked(has_passphrase)
+
+        self._pp_edit = QLineEdit()
+        self._pp_edit.setEchoMode(QLineEdit.Password)
+        self._pp_edit.setPlaceholderText(
+            "Enter passphrase (required to encrypt settings)"
+        )
+        self._pp_edit.setEnabled(has_passphrase)
+        pp_layout.addRow("Passphrase:", self._pp_edit)
+
+        self._pp_confirm_edit = QLineEdit()
+        self._pp_confirm_edit.setEchoMode(QLineEdit.Password)
+        self._pp_confirm_edit.setPlaceholderText("Confirm passphrase")
+        self._pp_confirm_edit.setEnabled(has_passphrase)
+        pp_layout.addRow("Confirm:", self._pp_confirm_edit)
+
+        layout.addLayout(pp_layout)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+
+        self._change_pp_btn = QPushButton("Change Passphrase")
+        self._change_pp_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2A2A3A;
+                color: #E0E0E5;
+                border: 1px solid #3A3A4A;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #3A3A4A;
+                border-color: #6C63FF;
+            }
+        """)
+        self._change_pp_btn.clicked.connect(self._change_passphrase)
+        self._change_pp_btn.setEnabled(has_passphrase)
+        btn_layout.addWidget(self._change_pp_btn)
+
+        self._remove_pp_btn = QPushButton("Remove Passphrase")
+        self._remove_pp_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2A2A3A;
+                color: #FF6B6B;
+                border: 1px solid #3A3A4A;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #3A3A4A;
+                border-color: #FF6B6B;
+            }
+        """)
+        self._remove_pp_btn.clicked.connect(self._remove_passphrase)
+        self._remove_pp_btn.setEnabled(has_passphrase)
+        btn_layout.addWidget(self._remove_pp_btn)
+
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+        # Migration notice
+        self._migration_label = QLabel("")
+        self._migration_label.setStyleSheet("color: #FFD166; font-size: 11px;")
+        self._migration_label.setWordWrap(True)
+        layout.addWidget(self._migration_label)
+
+        layout.addStretch()
+
+        # Connect checkbox to enable/disable passphrase fields
+        self._pp_check.stateChanged.connect(self._on_encryption_toggled)
+
+        return widget
+
+    def _on_encryption_toggled(self, state: int) -> None:
+        """Enable/disable passphrase fields based on encryption toggle."""
+        enabled = state == Qt.CheckState.Checked.value
+        self._pp_edit.setEnabled(enabled)
+        self._pp_confirm_edit.setEnabled(enabled)
+        self._change_pp_btn.setEnabled(enabled)
+        self._remove_pp_btn.setEnabled(enabled)
+
+        if enabled:
+            self._migration_label.setText(
+                "Note: Existing plaintext secrets will be encrypted on next save."
+            )
+        else:
+            self._migration_label.setText("")
+
+    def _change_passphrase(self) -> None:
+        """Open passphrase change dialog."""
+        new_pp = self._passphrase_manager.prompt_change_passphrase()
+        if new_pp is None:
+            return  # Cancelled
+
+        if new_pp == "":
+            # User wants to remove passphrase
+            self._passphrase_manager.clear_passphrase()
+            self._pp_check.setChecked(False)
+            self._on_encryption_toggled(Qt.CheckState.Unchecked.value)
+            self._keychain_status.setText(
+                "Unavailable" if not self._passphrase_manager.keyring_available else "Available"
+            )
+            logger.info("Passphrase removed")
+        else:
+            # Set new passphrase
+            self._passphrase_manager.set_passphrase(new_pp)
+            self._pp_edit.setText("")
+            self._pp_confirm_edit.setText("")
+            logger.info("Passphrase changed")
+
+    def _remove_passphrase(self) -> None:
+        """Remove the passphrase after confirmation."""
+        from PySide6.QtWidgets import QMessageBox
+
+        reply = QMessageBox.question(
+            self,
+            "Remove Passphrase",
+            "Remove the encryption passphrase?\n\n"
+            "Future saves will store secrets in plaintext.\n"
+            "Existing encrypted secrets will remain encrypted until saved again.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self._passphrase_manager.clear_passphrase()
+            self._pp_check.setChecked(False)
+            self._on_encryption_toggled(Qt.CheckState.Unchecked.value)
+            self._keychain_status.setText(
+                "Unavailable" if not self._passphrase_manager.keyring_available else "Available"
+            )
+            logger.info("Passphrase removed")
+
     # Event handlers
     def _browse_save_dir(self) -> None:
         """Open file dialog to select save directory."""
@@ -462,9 +656,30 @@ class SettingsDialog(QDialog):
     def accept(self) -> None:
         """Accept and save settings."""
         self._save_values()
+        # Handle passphrase changes
+        self._handle_passphrase_change()
         super().accept()
 
     def apply(self) -> None:
         """Apply settings without closing dialog."""
         self._save_values()
+        # Handle passphrase changes
+        self._handle_passphrase_change()
         logger.info("Settings applied")
+
+    def _handle_passphrase_change(self) -> None:
+        """Update passphrase if encryption was toggled."""
+        if self._pp_check.isChecked():
+            pp = self._pp_edit.text()
+            pp_confirm = self._pp_confirm_edit.text()
+            if pp != pp_confirm:
+                logger.warning("Passphrase mismatch — passphrase not updated")
+                return
+            if pp:
+                self._passphrase_manager.set_passphrase(pp)
+                logger.info("Passphrase set/updated")
+        else:
+            # Encryption disabled — don't clear passphrase immediately,
+            # but clear the cached value for this session
+            self._passphrase_manager._passphrase = None  # type: ignore[attr-defined]
+            logger.info("Encryption disabled for this session")

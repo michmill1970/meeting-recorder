@@ -1,5 +1,6 @@
 """Unit tests for LLM providers and summarization client."""
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -73,7 +74,7 @@ class TestAnthropicProvider:
     @pytest.mark.asyncio
     async def test_is_available_no_key(self) -> None:
         """Test availability check with empty API key."""
-        with patch("src.summarization.providers.anthropic.Anthropic") as mock_client_class:
+        with patch("anthropic.Anthropic") as mock_client_class:
             mock_client_class.side_effect = Exception("No API key")
             provider = AnthropicProvider(api_key="")
             assert await provider.is_available() is False
@@ -216,3 +217,106 @@ class TestLLMClient:
             client = LLMClient(settings)
             result = await client.is_available()
             assert result is False
+
+
+class TestBaseLLMClientCancel:
+    """Tests for BaseLLMClient cancellation support."""
+
+    def test_cancelled_initially_false(self) -> None:
+        """cancelled() should return False when not cancelled."""
+        with patch("src.summarization.providers.openai.AsyncOpenAI"):
+            provider = OpenAIProvider(api_key="test_key", model="gpt-4o")
+            assert provider.cancelled() is False
+
+    def test_cancel_sets_flag(self) -> None:
+        """cancel() should set _cancelled to True."""
+        with patch("src.summarization.providers.openai.AsyncOpenAI"):
+            provider = OpenAIProvider(api_key="test_key", model="gpt-4o")
+            provider.cancel()
+            assert provider.cancelled() is True
+
+
+class TestOllamaProviderCancel:
+    """Tests for OllamaProvider cancellation."""
+
+    @pytest.mark.asyncio
+    async def test_generate_raises_cancelled_when_cancelled_before_request(self) -> None:
+        """generate() should raise CancelledError if cancelled before API call."""
+        provider = OllamaProvider()
+        provider.cancel()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            await provider.generate("test prompt")
+        assert "cancelled" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_generate_raises_cancelled_when_cancelled_after_response(self) -> None:
+        """generate() should raise CancelledError if cancelled after API response."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "test content"}
+        mock_response.raise_for_status = MagicMock()
+
+        provider = OllamaProvider()
+        with patch("requests.post", return_value=mock_response):
+            provider.cancel()
+            with pytest.raises(asyncio.CancelledError) as exc_info:
+                await provider.generate("test prompt")
+            assert "cancelled" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_generate_chat_raises_cancelled_before_request(self) -> None:
+        """generate_chat() should raise CancelledError if cancelled before API call."""
+        provider = OllamaProvider()
+        provider.cancel()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            await provider.generate_chat([{"role": "user", "content": "hello"}])
+        assert "cancelled" in str(exc_info.value).lower()
+
+
+class TestLMStudioProviderCancel:
+    """Tests for LMStudioProvider cancellation."""
+
+    @pytest.mark.asyncio
+    async def test_generate_raises_cancelled_when_cancelled(self) -> None:
+        """generate() should raise CancelledError if cancelled."""
+        provider = LMStudioProvider()
+        provider.cancel()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            await provider.generate("test prompt")
+        assert "cancelled" in str(exc_info.value).lower()
+
+
+class TestVLLMProviderCancel:
+    """Tests for VLLMProvider cancellation."""
+
+    @pytest.mark.asyncio
+    async def test_generate_raises_cancelled_when_cancelled(self) -> None:
+        """generate() should raise CancelledError if cancelled."""
+        provider = VLLMProvider()
+        provider.cancel()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            await provider.generate("test prompt")
+        assert "cancelled" in str(exc_info.value).lower()
+
+
+class TestLLMClientCancel:
+    """Tests for LLMClient cancellation."""
+
+    def test_cancel_no_provider(self) -> None:
+        """cancel() should not crash when no provider is created."""
+        settings = Settings()
+        client = LLMClient(settings)
+        # Should not raise
+        client.cancel()
+
+    def test_cancel_delegates_to_provider(self) -> None:
+        """cancel() should delegate to the provider."""
+        with patch("src.summarization.providers.openai.AsyncOpenAI"):
+            settings = Settings()
+            settings.llm.provider = LLMProvider.OPENAI
+            settings.llm.api_key = "test_key"
+            client = LLMClient(settings)
+            # Force provider creation
+            client._get_provider()
+            # Now cancel
+            client.cancel()
+            assert client._provider.cancelled() is True
