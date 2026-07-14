@@ -58,8 +58,7 @@ build-macos: ## Build macOS application bundle
 		--clean \
 		--name="Meeting Recorder" \
 		--windowed \
-		--add-data "whisper-diarization:whisper-diarization" \
-		--add-data "src/ui/styles/dark_theme.qss:src/ui/styles" \
+	--add-data "whisper-diarization:whisper-diarization" \
 		--hidden-import PySide6.QtCore \
 		--hidden-import PySide6.QtGui \
 		--hidden-import PySide6.QtWidgets \

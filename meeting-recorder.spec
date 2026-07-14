@@ -40,8 +40,6 @@ a = Analysis(
     datas=[
         # Include the vendored whisper-diarization directory
         ("whisper-diarization", "whisper-diarization"),
-        # Include UI styles
-        ("src/ui/styles/dark_theme.qss", "src/ui/styles"),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
