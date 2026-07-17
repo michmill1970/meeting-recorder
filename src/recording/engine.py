@@ -58,6 +58,8 @@ class RecordingEngine:
         # At 1024 samples/chunk * 2 bytes/sample * 1000 chunks = ~2 MB
         self._max_raw_chunks = 1000
         self._overflow_count = 0
+        # Actual recording channel count (may differ from config if device doesn't support it)
+        self._recording_channels: int = 1
 
     def initialize(self) -> None:
         """Initialize PyAudio instance."""
@@ -145,17 +147,23 @@ class RecordingEngine:
         device_index = cfg.mic_device_id
         try:
             device_info = self._pa.get_device_info_by_index(device_index)
-            # Use device's native sample rate if possible, fallback to 16000
+            device_name = device_info.get("name", "Unknown")
+            # Use device's native sample rate if possible, fallback to config
             sample_rate = int(device_info.get("defaultSampleRate", cfg.sample_rate))
-            logger.info("Using device: %s (rate: %.0f Hz)",
-                       device_info.get("name", "Unknown"), sample_rate)
+            # Use device's max input channels (some devices don't support mono)
+            device_channels = max(1, int(device_info.get("maxInputChannels", 1)))
+            # Default to config channels, but fall back to device's native count
+            channels = cfg.channels if cfg.channels <= device_channels else device_channels
+            logger.info("Using device: %s (rate: %.0f Hz, channels: %d)",
+                        device_name, sample_rate, device_channels)
         except Exception as e:
             logger.warning("Failed to get device info, using defaults: %s", e)
             sample_rate = cfg.sample_rate
+            channels = cfg.channels
 
         self._stream = self._pa.open(
             format=pyaudio.paInt16,  # 16-bit audio
-            channels=cfg.channels,
+            channels=channels,
             rate=sample_rate,
             input=True,
             input_device_index=device_index,
@@ -164,20 +172,24 @@ class RecordingEngine:
         )
         self._stream.start_stream()
 
+        # Store actual channel count for format conversion later
+        self._recording_channels = channels
+
         # Initialize audio file based on format
-        self._open_audio_file(session, sample_rate)
+        self._open_audio_file(session, sample_rate, channels)
 
         logger.info(
             "Audio stream opened: rate=%d, channels=%d, device=%d, format=%s",
-            sample_rate, cfg.channels, device_index, cfg.audio_format.value,
+            sample_rate, channels, device_index, cfg.audio_format.value,
         )
 
-    def _open_audio_file(self, session: RecordingSession, sample_rate: int) -> None:
+    def _open_audio_file(self, session: RecordingSession, sample_rate: int, channels: int) -> None:
         """Open audio file for recording based on configured format.
 
         Args:
             session: The recording session
             sample_rate: The sample rate to use
+            channels: The number of audio channels (from device info)
         """
         cfg = self._settings.recording
         format_type = cfg.audio_format
@@ -186,7 +198,7 @@ class RecordingEngine:
             # Use native WAV writing for WAV format (most efficient)
             filename = "recording.wav"
             self._wave_file = wave.open(str(session.meeting_dir / filename), "wb")
-            self._wave_file.setnchannels(cfg.channels)
+            self._wave_file.setnchannels(channels)
             self._wave_file.setsampwidth(cfg.sample_width)
             self._wave_file.setframerate(sample_rate)
             self._using_wav_writer = True
@@ -390,7 +402,7 @@ class RecordingEngine:
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "s16le",  # 16-bit signed little-endian
                 "-ar", str(cfg.sample_rate),
-                "-ac", str(cfg.channels),
+                "-ac", str(self._recording_channels),
                 "-i", temp_pcm,
             ]
 
