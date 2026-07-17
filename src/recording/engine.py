@@ -161,26 +161,59 @@ class RecordingEngine:
             sample_rate = cfg.sample_rate
             channels = cfg.channels
 
-        self._stream = self._pa.open(
-            format=pyaudio.paInt16,  # 16-bit audio
-            channels=channels,
-            rate=sample_rate,
-            input=True,
-            input_device_index=device_index,
-            frames_per_buffer=self.CHUNK,
-            stream_callback=self._audio_callback,
-        )
-        self._stream.start_stream()
+        # Some devices report maxInputChannels incorrectly (especially on macOS).
+        # Try the detected channel count first, then fall back through common values.
+        fallback_order = [channels, 2, 1]
+        fallback_order = [c for c in fallback_order if c > 0 and c not in fallback_order[:fallback_order.index(c)]]
 
-        # Store actual channel count for format conversion later
-        self._recording_channels = channels
+        last_error = None
+        opened_channels = None
+        for attempt_channels in fallback_order:
+            try:
+                self._stream = self._pa.open(
+                    format=pyaudio.paInt16,  # 16-bit audio
+                    channels=attempt_channels,
+                    rate=sample_rate,
+                    input=True,
+                    input_device_index=device_index,
+                    frames_per_buffer=self.CHUNK,
+                    stream_callback=self._audio_callback,
+                )
+                self._stream.start_stream()
+                opened_channels = attempt_channels
+                break
+            except OSError as e:
+                logger.warning("Failed with %d channel(s): %s", attempt_channels, e)
+                last_error = e
+
+        if last_error:
+            # Last resort: let PortAudio pick the default device/params
+            logger.info("Device-specific open failed, trying default device...")
+            try:
+                self._stream = self._pa.open(
+                    format=pyaudio.paInt16,
+                    channels=cfg.channels,
+                    rate=sample_rate,
+                    input=True,
+                    frames_per_buffer=self.CHUNK,
+                    stream_callback=self._audio_callback,
+                )
+                self._stream.start_stream()
+                opened_channels = cfg.channels
+                device_index = self._pa.get_default_input_device_info()["index"]
+            except OSError as e:
+                logger.error("All recording attempts failed: %s", e)
+                raise
+
+        assert opened_channels is not None, "Stream should have been opened"
+        self._recording_channels = opened_channels
 
         # Initialize audio file based on format
-        self._open_audio_file(session, sample_rate, channels)
+        self._open_audio_file(session, sample_rate, opened_channels)
 
         logger.info(
             "Audio stream opened: rate=%d, channels=%d, device=%d, format=%s",
-            sample_rate, channels, device_index, cfg.audio_format.value,
+            sample_rate, opened_channels, device_index, cfg.audio_format.value,
         )
 
     def _open_audio_file(self, session: RecordingSession, sample_rate: int, channels: int) -> None:
