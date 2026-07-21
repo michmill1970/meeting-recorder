@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -60,12 +61,54 @@ class RecordingEngine:
         self._overflow_count = 0
         # Actual recording channel count (may differ from config if device doesn't support it)
         self._recording_channels: int = 1
+        # Cache of FFmpeg encoder availability
+        self._ffmpeg_encoders: Optional[set[str]] = None
 
     def initialize(self) -> None:
         """Initialize PyAudio instance."""
         if self._pa is None:
             self._pa = pyaudio.PyAudio()
             logger.info("PyAudio initialized")
+
+    def _get_available_encoders(self) -> set[str]:
+        """Get set of available FFmpeg audio encoder names.
+
+        Returns:
+            Set of encoder names (e.g., {'libvorbis', 'libopus', 'flac', ...})
+            Empty set if FFmpeg is not available or call fails.
+        """
+        if self._ffmpeg_encoders is not None:
+            return self._ffmpeg_encoders
+
+        self._ffmpeg_encoders = set()
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-encoders"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    # Encoder lines look like:
+                    #  A..... flac            Free Lossless Audio Codec
+                    #  A..... libopus         Opus (Opus Interactive Audio Codec)
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0].startswith("A"):
+                        self._ffmpeg_encoders.add(parts[1])
+        except (OSError, subprocess.TimeoutExpired):
+            pass  # FFmpeg not available or timed out
+
+        logger.debug("Available FFmpeg audio encoders: %s", self._ffmpeg_encoders)
+        return self._ffmpeg_encoders
+
+    def _encoder_for_format(self, fmt: AudioFormat) -> Optional[str]:
+        """Get the FFmpeg encoder name for a given audio format."""
+        mapping = {
+            AudioFormat.FLAC: "flac",
+            AudioFormat.OPUS: "libopus",
+            AudioFormat.MP3: "libmp3lame",
+            AudioFormat.OGG: "libvorbis",
+        }
+        return mapping.get(fmt)
 
     def shutdown(self) -> None:
         """Clean up PyAudio and close any open streams/files."""
@@ -429,8 +472,26 @@ class RecordingEngine:
                 for chunk in chunks:
                     f.write(chunk)
 
-            # Convert to target format using ffmpeg
+            # Check if the encoder for the selected format is available
+            encoder_name = self._encoder_for_format(cfg.audio_format)
+            if encoder_name:
+                encoders = self._get_available_encoders()
+                if encoder_name not in encoders:
+                    logger.warning(
+                        "FFmpeg encoder '%s' not available for %s. "
+                        "Falling back to WAV.",
+                        encoder_name, cfg.audio_format.value,
+                    )
+                    cfg = type(cfg)(
+                        **{
+                            k: (AudioFormat.WAV if k == "audio_format" else v)
+                            for k, v in cfg.__dict__.items()
+                        }
+                    )
+
             output_path = self._get_audio_path()
+
+            # Convert to target format using ffmpeg
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "s16le",  # 16-bit signed little-endian
