@@ -61,6 +61,8 @@ class RecordingEngine:
         self._overflow_count = 0
         # Actual recording channel count (may differ from config if device doesn't support it)
         self._recording_channels: int = 1
+        # Actual recording sample rate (from device info, may differ from config)
+        self._recording_sample_rate: int = 16000
         # Cache of FFmpeg encoder availability
         self._ffmpeg_encoders: Optional[set[str]] = None
 
@@ -199,9 +201,11 @@ class RecordingEngine:
             channels = cfg.channels if cfg.channels <= device_channels else device_channels
             logger.info("Using device: %s (rate: %.0f Hz, channels: %d)",
                         device_name, sample_rate, device_channels)
+            self._recording_sample_rate = sample_rate
         except Exception as e:
             logger.warning("Failed to get device info, using defaults: %s", e)
             sample_rate = cfg.sample_rate
+            self._recording_sample_rate = sample_rate
             channels = cfg.channels
 
         # Some devices report maxInputChannels incorrectly (especially on macOS).
@@ -276,7 +280,7 @@ class RecordingEngine:
             self._wave_file = wave.open(str(session.meeting_dir / filename), "wb")
             self._wave_file.setnchannels(channels)
             self._wave_file.setsampwidth(cfg.sample_width)
-            self._wave_file.setframerate(sample_rate)
+            self._wave_file.setframerate(self._recording_sample_rate)
             self._using_wav_writer = True
         else:
             # For other formats, use raw PCM buffer and convert on stop
@@ -495,7 +499,7 @@ class RecordingEngine:
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "s16le",  # 16-bit signed little-endian
-                "-ar", str(cfg.sample_rate),
+                "-ar", str(self._recording_sample_rate),
                 "-ac", str(self._recording_channels),
                 "-i", temp_pcm,
             ]
