@@ -55,10 +55,11 @@ class RecordingEngine:
         self._audio_buffer: Optional[np.ndarray] = None
         self._audio_raw_buffer: list[bytes] = []
         self._buffer_lock = threading.Lock()
-        # Maximum number of raw chunks to buffer (prevents unbounded memory growth)
-        # At 1024 samples/chunk * 2 bytes/sample * 1000 chunks = ~2 MB
-        self._max_raw_chunks = 1000
-        self._overflow_count = 0
+        # For non-WAV formats: raw PCM written to a temp file during recording,
+        # converted to target format at stop(). This avoids unbounded memory
+        # growth and prevents data loss on long recordings.
+        self._pcm_temp_fd: Optional[int] = None
+        self._pcm_temp_path: Optional[str] = None
         # Actual recording channel count (may differ from config if device doesn't support it)
         self._recording_channels: int = 1
         # Actual recording sample rate (from device info, may differ from config)
@@ -283,9 +284,12 @@ class RecordingEngine:
             self._wave_file.setframerate(self._recording_sample_rate)
             self._using_wav_writer = True
         else:
-            # For other formats, use raw PCM buffer and convert on stop
+            # For other formats, write raw PCM to a temp file during recording,
+            # then convert to target format at stop(). This avoids in-memory
+            # buffer overflow and data loss on long recordings.
             filename = f"recording.{format_type.value}"
-            self._audio_raw_buffer: list[bytes] = []
+            fd, self._pcm_temp_path = tempfile.mkstemp(suffix=".pcm")
+            self._pcm_temp_fd = fd
             self._wave_file = None
             self._using_wav_writer = False
 
@@ -315,21 +319,9 @@ class RecordingEngine:
         # Write to file based on format
         if self._using_wav_writer and self._wave_file:
             self._wave_file.writeframes(in_data)
-        elif not self._using_wav_writer:
-            # Buffer raw PCM data for non-WAV formats with overflow protection
-            with self._buffer_lock:
-                self._audio_raw_buffer.append(in_data)
-                if len(self._audio_raw_buffer) > self._max_raw_chunks:
-                    self._overflow_count += 1
-                    if self._overflow_count == 1:
-                        logger.warning(
-                            "Raw buffer exceeded %d chunks — oldest chunks will be "
-                            "dropped to prevent unbounded memory growth",
-                            self._max_raw_chunks,
-                        )
-                    # Drop oldest 25% of chunks to prevent unbounded growth
-                    drop_count = self._max_raw_chunks // 4
-                    self._audio_raw_buffer = self._audio_raw_buffer[-(self._max_raw_chunks - drop_count):]
+        elif not self._using_wav_writer and self._pcm_temp_fd is not None:
+            # Write raw PCM to temp file for non-WAV formats
+            os.write(self._pcm_temp_fd, in_data)
 
         return None, pyaudio.paContinue
 
@@ -378,20 +370,20 @@ class RecordingEngine:
         self._paused = False
         logger.info("Recording resumed")
 
-    def freeze_buffer(self) -> None:
-        """Freeze the raw PCM buffer to prevent race conditions during conversion.
-
-        Called by stop() before _convert_to_format() to ensure the stream callback
-        cannot write new data to the buffer while we're reading it. This prevents
-        partial/corrupt output. The callback itself continues to run (it checks
-        _running which is already False), but no new data is appended to the buffer
-        because _running is False.
-        """
-        with self._buffer_lock:
-            if not self._audio_raw_buffer:
-                return
-            # Copy the buffer contents so _convert_to_format can read them
-            self._audio_raw_buffer = list(self._audio_raw_buffer)
+    def _close_pcm_temp_file(self) -> None:
+        """Close and remove the temporary PCM file used for non-WAV recording."""
+        if self._pcm_temp_fd is not None:
+            try:
+                os.close(self._pcm_temp_fd)
+            except OSError:
+                pass
+            self._pcm_temp_fd = None
+        if self._pcm_temp_path:
+            try:
+                os.unlink(self._pcm_temp_path)
+            except OSError:
+                pass
+            self._pcm_temp_path = None
 
     def stop(self) -> None:
         """Stop recording and close all resources."""
@@ -405,9 +397,9 @@ class RecordingEngine:
             self._paused = False
             self._pause_start_mono = None
 
-        # Freeze the raw buffer before conversion to prevent race with stream callback
+        # Close PCM temp file before conversion to prevent race with stream callback
         if not self._using_wav_writer:
-            self.freeze_buffer()
+            self._close_pcm_temp_file()
 
         # Close WAV file if using WAV writer
         if self._wave_file:
@@ -415,7 +407,7 @@ class RecordingEngine:
             self._wave_file = None
 
         # Convert raw PCM to selected format if not WAV
-        if not self._using_wav_writer and hasattr(self, "_audio_raw_buffer"):
+        if not self._using_wav_writer and self._pcm_temp_path:
             self._convert_to_format()
 
         # Stop stream
@@ -454,28 +446,18 @@ class RecordingEngine:
         return self._session.meeting_dir / f"recording.{cfg.audio_format.value}"
 
     def _convert_to_format(self) -> None:
-        """Convert raw PCM buffer to the selected audio format using ffmpeg."""
+        """Convert raw PCM file to the selected audio format using ffmpeg."""
         import subprocess
 
         cfg = self._settings.recording
         session = self._session
 
-        if not session or not session.meeting_dir:
+        if not session or not session.meeting_dir or not self._pcm_temp_path:
             return
 
-        # Write raw PCM to temp file
-        fd, temp_pcm = tempfile.mkstemp(suffix=".pcm")
-        os.close(fd)
+        temp_pcm = self._pcm_temp_path
 
         try:
-            # Write raw PCM data (protected by buffer lock to avoid callback writes)
-            with self._buffer_lock:
-                chunks = list(self._audio_raw_buffer)
-
-            with open(temp_pcm, "wb") as f:
-                for chunk in chunks:
-                    f.write(chunk)
-
             # Check if the encoder for the selected format is available
             encoder_name = self._encoder_for_format(cfg.audio_format)
             if encoder_name:
@@ -536,12 +518,8 @@ class RecordingEngine:
         except OSError as e:
             logger.error("Failed to write audio: %s", e)
         finally:
-            # Clean up temp file
+            # Clean up temp PCM file
             try:
                 os.unlink(temp_pcm)
             except OSError:
                 pass
-
-        # Clear buffer (protected by lock to avoid callback writes)
-        with self._buffer_lock:
-            self._audio_raw_buffer = []
