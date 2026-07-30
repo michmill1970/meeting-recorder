@@ -42,6 +42,7 @@ class RecordingPanel(QWidget):
     gain_changed = Signal(float)
     auto_mode_toggled = Signal(bool)
     meeting_selected = Signal(str)  # meeting_dir path
+    meeting_deleted = Signal(str)  # meeting_dir path
     reprocess_clicked = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None):
@@ -195,13 +196,25 @@ class RecordingPanel(QWidget):
         self._meeting_list.itemClicked.connect(self._on_meeting_selected)
         layout.addWidget(self._meeting_list, 1)
 
-        # Reprocess button (anchored to bottom)
+        # Button row at bottom
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        self._delete_btn = QPushButton("Delete Selected")
+        self._delete_btn.setObjectName("dangerButton")
+        self._delete_btn.setFixedHeight(36)
+        self._delete_btn.setEnabled(False)
+        self._delete_btn.clicked.connect(self._on_delete_clicked)
+        btn_row.addWidget(self._delete_btn)
+
         self._reprocess_btn = QPushButton("Reprocess Selected")
         self._reprocess_btn.setObjectName("secondaryButton")
         self._reprocess_btn.setFixedHeight(36)
         self._reprocess_btn.setEnabled(False)
         self._reprocess_btn.clicked.connect(self._on_reprocess_clicked)
-        layout.addWidget(self._reprocess_btn)
+        btn_row.addWidget(self._reprocess_btn)
+
+        layout.addLayout(btn_row)
 
         return tab
 
@@ -231,6 +244,13 @@ class RecordingPanel(QWidget):
     def _on_meeting_selected(self, item: QListWidgetItem) -> None:
         meeting_dir = item.data(Qt.UserRole)
         self.meeting_selected.emit(meeting_dir)
+        self._delete_btn.setEnabled(True)
+        self._reprocess_btn.setEnabled(True)
+
+    def _on_delete_clicked(self) -> None:
+        meeting_dir = self.get_selected_meeting_dir()
+        if meeting_dir:
+            self.meeting_deleted.emit(meeting_dir)
 
     def _on_reprocess_clicked(self) -> None:
         self.reprocess_clicked.emit()

@@ -353,6 +353,7 @@ class MainWindow(QMainWindow):
         self._recording_panel.gain_changed.connect(self._on_gain_changed)
         self._recording_panel.auto_mode_toggled.connect(self._on_auto_mode_toggled)
         self._recording_panel.meeting_selected.connect(self._load_meeting)
+        self._recording_panel.meeting_deleted.connect(self._delete_meeting)
         self._recording_panel.reprocess_clicked.connect(self._reprocess_meeting)
 
         # Connect tab switch to populate meetings list
@@ -540,6 +541,37 @@ class MainWindow(QMainWindow):
         # Enable reprocess button
         self._recording_panel.set_reprocess_enabled(True)
         self._status_label.setText(f"Loaded: {meeting_dir.name}")
+
+    def _delete_meeting(self, meeting_dir_str: str) -> None:
+        """Delete the selected meeting after confirmation."""
+        meeting_dir = Path(meeting_dir_str)
+
+        # Confirm deletion
+        reply = QMessageBox.warning(
+            self,
+            "Delete Recording",
+            f"Are you sure you want to delete:\n{meeting_dir.name}\n\nThis will remove the entire meeting directory including audio, transcript, and summary. This action cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # Delete the directory recursively
+        try:
+            import shutil
+            shutil.rmtree(meeting_dir)
+            logger.info("Deleted meeting directory: %s", meeting_dir)
+            self._status_label.setText(f"Deleted: {meeting_dir.name}")
+            # Refresh the meeting list
+            self._populate_meetings_list()
+        except OSError as e:
+            logger.error("Failed to delete meeting directory: %s", e)
+            QMessageBox.critical(
+                self,
+                "Delete Failed",
+                f"Failed to delete:\n{meeting_dir}\n\nError: {e}",
+            )
 
     def _reprocess_meeting(self) -> None:
         """Reprocess the currently selected meeting with current settings."""
